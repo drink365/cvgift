@@ -1,6 +1,8 @@
 import io, os, datetime
 import streamlit as st
 import pandas as pd
+from PIL import Image
+
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
@@ -8,20 +10,27 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-# -------- Page config (uses favicon if present) --------
+# ---------- Page config (use favicon if present) ----------
 page_icon = "logo2.png" if os.path.exists("logo2.png") else "🏛️"
-st.set_page_config(page_title="三代傳承試算 v3e｜保單折價贈與（固定法規）", page_icon=page_icon, layout="wide")
+st.set_page_config(page_title="三代傳承試算 v3f｜保單折價贈與（固定法規）", page_icon=page_icon, layout="wide")
 
-# Header with logo if available
-header_cols = st.columns([1,5])
-with header_cols[0]:
+# ---------- Header with robust logo handling ----------
+c1, c2 = st.columns([1,5])
+with c1:
     if os.path.exists("logo.png"):
-        st.image("logo.png", use_column_width=True)
-with header_cols[1]:
-    st.title("三代傳承試算 v3e：無規劃 vs 有規劃（變更要保人）")
+        try:
+            img = Image.open("logo.png")
+            st.image(img, use_column_width=True)
+        except Exception:
+            st.warning("⚠️ logo.png 無法讀取，已改用文字抬頭")
+            st.markdown("### 永傳家族辦公室 Grace Family Office")
+    else:
+        st.markdown("### 永傳家族辦公室 Grace Family Office")
+with c2:
+    st.title("三代傳承試算 v3f：無規劃 vs 有規劃（變更要保人）")
     st.caption("台灣贈與稅／遺產稅 2025 年度數值固定；本工具僅供教學。")
 
-# -------- Fixed law params (2025) --------
+# ---------- Fixed law params (2025) ----------
 GIFT_EXEMPT = 2_440_000
 GIFT_B1, GIFT_B2 = 28_110_000, 56_210_000
 QD_GIFT_15, QD_GIFT_20 = 1_405_500, 4_216_000
@@ -47,7 +56,7 @@ def estate_tax_amount(taxable: int) -> int:
     if taxable <= EST_B2: return round(taxable * 0.15 - QD_EST_15)
     return round(taxable * 0.20 - QD_EST_20)
 
-# -------- Law tables --------
+# ---------- Law tables ----------
 colA, colB = st.columns(2)
 with colA:
     st.markdown("### 贈與稅（年免 2,440,000）")
@@ -64,7 +73,7 @@ with colB:
 
 st.divider()
 
-# -------- Inputs --------
+# ---------- Inputs ----------
 left, right = st.columns(2)
 with left:
     st.subheader("基礎輸入")
@@ -81,7 +90,7 @@ with right:
     chg_owner = st.checkbox("✔️ 變更要保人（CVP 贈與給第二代）", value=True)
     benef_to_gen3 = st.checkbox("✔️ 保額受益人指定第三代", value=True, help="勾選：保額不列入第二代遺產；未勾：保額會列入第二代遺產課稅基礎")
 
-# -------- Calculations --------
+# ---------- Calculations ----------
 gift_base_plan = max(cvp - donors * GIFT_EXEMPT, 0) if chg_owner else 0
 gift_tax_plan = gift_tax(gift_base_plan) if chg_owner else 0
 
@@ -116,7 +125,7 @@ total_tax_noplan = gen1_estate_tax_noplan + gen2_estate_tax_noplan
 total_tax_plan = gift_tax_plan + gen1_estate_tax_plan + gen2_estate_tax_plan
 delta_save = total_tax_noplan - total_tax_plan
 
-# -------- Display --------
+# ---------- Display ----------
 st.divider()
 st.subheader("結果摘要")
 s1, s2, s3, s4 = st.columns(4)
@@ -166,12 +175,11 @@ df = pd.DataFrame({
 })
 st.dataframe(df, use_container_width=True)
 
-# -------- PDF Export (with logo + font if present) --------
+# ---------- PDF Export (use NotoSans if present) ----------
 st.divider()
 st.subheader("報告匯出（使用根目錄檔：logo.png / logo2.png / NotoSansTC-Regular.ttf）")
 
 def build_pdf_bytes():
-    # register font if available
     font_name = "Helvetica"
     if os.path.exists("NotoSansTC-Regular.ttf"):
         try:
@@ -186,16 +194,15 @@ def build_pdf_bytes():
     x_margin, y_margin = 15*mm, 15*mm
     y = h - y_margin
 
-    # Brand Header (logo + text)
+    # Logo + header text
+    x_text = x_margin
     if os.path.exists("logo.png"):
         try:
             img = ImageReader("logo.png")
             c.drawImage(img, x_margin, y-12*mm, width=30*mm, height=12*mm, preserveAspectRatio=True, mask='auto')
             x_text = x_margin + 32*mm
         except Exception:
-            x_text = x_margin
-    else:
-        x_text = x_margin
+            pass
 
     c.setFont(font_name, 14)
     c.drawString(x_text, y, "永傳家族辦公室 Grace Family Office")
@@ -206,12 +213,10 @@ def build_pdf_bytes():
     c.drawString(x_text, y, "報告日期：" + datetime.date.today().strftime("%Y-%m-%d"))
     y -= 10*mm
 
-    # Title
     c.setFont(font_name, 13)
     c.drawString(x_margin, y, "三代傳承試算報告（固定法規）")
     y -= 10*mm
 
-    # Summary
     c.setFont(font_name, 11)
     lines = [
         f"第一代贈與稅（有規劃）：{cur(gift_tax_plan)} 元",
