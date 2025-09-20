@@ -1,7 +1,8 @@
+# app.py
 import io, os, datetime
 import streamlit as st
 import pandas as pd
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -10,27 +11,64 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-# ---------- Page config (use favicon if present) ----------
-page_icon = "logo2.png" if os.path.exists("logo2.png") else "🏛️"
-st.set_page_config(page_title="三代傳承試算 v3f｜保單折價贈與（固定法規）", page_icon=page_icon, layout="wide")
+# ---------- Utilities ----------
+def safe_open_image(path: str):
+    """Return a PIL.Image if path is a valid image; else None."""
+    if not os.path.exists(path):
+        return None
+    try:
+        img = Image.open(path)  # Pillow will validate the file header
+        img.load()              # force load to catch truncated files
+        return img
+    except Exception:
+        return None
 
-# ---------- Header with robust logo handling ----------
-c1, c2 = st.columns([1,5])
+def safe_page_config():
+    # Do NOT pass a potentially bad image directly into page_icon.
+    # Validate logo2.png first; otherwise fallback to emoji.
+    favicon = "🏛️"
+    test_img = safe_open_image("logo2.png")
+    if test_img is not None:
+        favicon = "logo2.png"
+    st.set_page_config(
+        page_title="三代傳承試算｜保單折價贈與（固定法規）",
+        page_icon=favicon,
+        layout="wide",
+    )
+
+def cur(n): 
+    try:
+        return f"{int(round(n)):,}"
+    except Exception:
+        return str(n)
+
+def gift_tax_amount(taxable: int, b1, b2, qd15, qd20) -> int:
+    if taxable <= 0: return 0
+    if taxable <= b1: return round(taxable * 0.10)
+    if taxable <= b2: return round(taxable * 0.15 - qd15)
+    return round(taxable * 0.20 - qd20)
+
+def estate_tax_amount(taxable: int, b1, b2, qd15, qd20) -> int:
+    if taxable <= 0: return 0
+    if taxable <= b1: return round(taxable * 0.10)
+    if taxable <= b2: return round(taxable * 0.15 - qd15)
+    return round(taxable * 0.20 - qd20)
+
+safe_page_config()
+
+# ---------- Header (robust to bad logo.png) ----------
+c1, c2 = st.columns([1, 5])
 with c1:
-    if os.path.exists("logo.png"):
-        try:
-            img = Image.open("logo.png")
-            st.image(img, use_column_width=True)
-        except Exception:
-            st.warning("⚠️ logo.png 無法讀取，已改用文字抬頭")
-            st.markdown("### 永傳家族辦公室 Grace Family Office")
+    page_logo = safe_open_image("logo.png")
+    if page_logo is not None:
+        st.image(page_logo, use_column_width=True)
     else:
         st.markdown("### 永傳家族辦公室 Grace Family Office")
 with c2:
-    st.title("三代傳承試算 v3f：無規劃 vs 有規劃（變更要保人）")
+    st.title("三代傳承試算：無規劃 vs 有規劃（變更要保人）")
     st.caption("台灣贈與稅／遺產稅 2025 年度數值固定；本工具僅供教學。")
 
-# ---------- Fixed law params (2025) ----------
+# ---------- Fixed law params (2025, Taiwan) ----------
 GIFT_EXEMPT = 2_440_000
 GIFT_B1, GIFT_B2 = 28_110_000, 56_210_000
 QD_GIFT_15, QD_GIFT_20 = 1_405_500, 4_216_000
@@ -41,20 +79,6 @@ FUNERAL_DEDUCT = 1_380_000
 LINEAL_PER = 560_000
 EST_B1, EST_B2 = 56_210_000, 112_420_000
 QD_EST_15, QD_EST_20 = 2_810_500, 8_431_500
-
-def cur(n): return f"{int(n):,}"
-
-def gift_tax(taxable: int) -> int:
-    if taxable <= 0: return 0
-    if taxable <= GIFT_B1: return round(taxable * 0.10)
-    if taxable <= GIFT_B2: return round(taxable * 0.15 - QD_GIFT_15)
-    return round(taxable * 0.20 - QD_GIFT_20)
-
-def estate_tax_amount(taxable: int) -> int:
-    if taxable <= 0: return 0
-    if taxable <= EST_B1: return round(taxable * 0.10)
-    if taxable <= EST_B2: return round(taxable * 0.15 - QD_EST_15)
-    return round(taxable * 0.20 - QD_EST_20)
 
 # ---------- Law tables ----------
 colA, colB = st.columns(2)
@@ -81,44 +105,49 @@ with left:
     donors = int(st.number_input("贈與人數（例：父母=2）", min_value=1, value=1, step=1))
     lineal_cnt_gen1 = int(st.number_input("第一代：直系卑親屬人數", min_value=0, value=0, step=1))
     lineal_cnt_gen2 = int(st.number_input("第二代：直系卑親屬人數", min_value=0, value=0, step=1))
-
 with right:
     st.subheader("保單規劃")
     premium = int(st.number_input("保費（第一代投入）", min_value=0, value=6_000_000, step=100_000))
     cvp = int(st.number_input("保價金／CVP（贈與課稅基礎）", min_value=0, value=2_000_000, step=100_000))
     face = int(st.number_input("保額（壽險理賠金）", min_value=0, value=30_000_000, step=1_000_000))
     chg_owner = st.checkbox("✔️ 變更要保人（CVP 贈與給第二代）", value=True)
-    benef_to_gen3 = st.checkbox("✔️ 保額受益人指定第三代", value=True, help="勾選：保額不列入第二代遺產；未勾：保額會列入第二代遺產課稅基礎")
+    benef_to_gen3 = st.checkbox("✔️ 保額受益人指定第三代", value=True,
+                                help="勾選：保額不列入第二代遺產；未勾：保額列入第二代遺產課稅基礎")
 
 # ---------- Calculations ----------
 gift_base_plan = max(cvp - donors * GIFT_EXEMPT, 0) if chg_owner else 0
-gift_tax_plan = gift_tax(gift_base_plan) if chg_owner else 0
+gift_tax_plan = gift_tax_amount(gift_base_plan, GIFT_B1, GIFT_B2, QD_GIFT_15, QD_GIFT_20) if chg_owner else 0
 
+# 無規劃：買保單後資產 = total - premium + cvp
 gen1_assets_after_policy = total_assets - premium + cvp
-gen1_estate_base_noplan = max(gen1_assets_after_policy - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen1*LINEAL_PER, 0)
-gen1_estate_tax_noplan = estate_tax_amount(gen1_estate_base_noplan)
+gen1_estate_base_noplan = max(gen1_assets_after_policy - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen1 * LINEAL_PER, 0)
+gen1_estate_tax_noplan = estate_tax_amount(gen1_estate_base_noplan, EST_B1, EST_B2, QD_EST_15, QD_EST_20)
 gen2_inherit_noplan = gen1_assets_after_policy - gen1_estate_tax_noplan
 
+# 有規劃：完成贈與後資產 = total - premium - 贈與稅（CVP 轉出到第二代）
 gen1_assets_after_gift = (total_assets - premium) - gift_tax_plan if chg_owner else gen1_assets_after_policy
-gen1_estate_base_plan = max(gen1_assets_after_gift - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen1*LINEAL_PER, 0)
-gen1_estate_tax_plan = estate_tax_amount(gen1_estate_base_plan)
+gen1_estate_base_plan = max(gen1_assets_after_gift - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen1 * LINEAL_PER, 0)
+gen1_estate_tax_plan = estate_tax_amount(gen1_estate_base_plan, EST_B1, EST_B2, QD_EST_15, QD_EST_20)
 gen2_inherit_plan = gen1_assets_after_gift - gen1_estate_tax_plan
 
+# 第二代遺產
 if benef_to_gen3:
-    gen2_estate_base_noplan = max(gen2_inherit_noplan - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2*LINEAL_PER, 0)
-    gen2_estate_tax_noplan = estate_tax_amount(gen2_estate_base_noplan)
+    # 保額不列入第二代遺產
+    gen2_estate_base_noplan = max(gen2_inherit_noplan - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2 * LINEAL_PER, 0)
+    gen2_estate_tax_noplan = estate_tax_amount(gen2_estate_base_noplan, EST_B1, EST_B2, QD_EST_15, QD_EST_20)
     gen3_final_noplan = gen2_inherit_noplan - gen2_estate_tax_noplan + face
 
-    gen2_estate_base_plan = max(gen2_inherit_plan - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2*LINEAL_PER, 0)
-    gen2_estate_tax_plan = estate_tax_amount(gen2_estate_base_plan)
+    gen2_estate_base_plan = max(gen2_inherit_plan - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2 * LINEAL_PER, 0)
+    gen2_estate_tax_plan = estate_tax_amount(gen2_estate_base_plan, EST_B1, EST_B2, QD_EST_15, QD_EST_20)
     gen3_final_plan = gen2_inherit_plan - gen2_estate_tax_plan + face
 else:
-    gen2_estate_base_noplan = max((gen2_inherit_noplan + face) - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2*LINEAL_PER, 0)
-    gen2_estate_tax_noplan = estate_tax_amount(gen2_estate_base_noplan)
+    # 保額列入第二代遺產
+    gen2_estate_base_noplan = max((gen2_inherit_noplan + face) - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2 * LINEAL_PER, 0)
+    gen2_estate_tax_noplan = estate_tax_amount(gen2_estate_base_noplan, EST_B1, EST_B2, QD_EST_15, QD_EST_20)
     gen3_final_noplan = gen2_inherit_noplan + face - gen2_estate_tax_noplan
 
-    gen2_estate_base_plan = max((gen2_inherit_plan + face) - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2*LINEAL_PER, 0)
-    gen2_estate_tax_plan = estate_tax_amount(gen2_estate_base_plan)
+    gen2_estate_base_plan = max((gen2_inherit_plan + face) - ESTATE_EXEMPT - SPOUSE_DEDUCT - FUNERAL_DEDUCT - lineal_cnt_gen2 * LINEAL_PER, 0)
+    gen2_estate_tax_plan = estate_tax_amount(gen2_estate_base_plan, EST_B1, EST_B2, QD_EST_15, QD_EST_20)
     gen3_final_plan = gen2_inherit_plan + face - gen2_estate_tax_plan
 
 total_tax_noplan = gen1_estate_tax_noplan + gen2_estate_tax_noplan
@@ -175,7 +204,7 @@ df = pd.DataFrame({
 })
 st.dataframe(df, use_container_width=True)
 
-# ---------- PDF Export (use NotoSans if present) ----------
+# ---------- PDF Export (robust: logo + NotoSans if available) ----------
 st.divider()
 st.subheader("報告匯出（使用根目錄檔：logo.png / logo2.png / NotoSansTC-Regular.ttf）")
 
@@ -196,10 +225,17 @@ def build_pdf_bytes():
 
     # Logo + header text
     x_text = x_margin
-    if os.path.exists("logo.png"):
+    # Use ImageReader only if Pillow could load it (avoid ReportLab choking on invalid file)
+    pil_logo = safe_open_image("logo.png")
+    if pil_logo is not None:
+        # convert to bytes for ImageReader
+        bio = io.BytesIO()
+        pil_logo.save(bio, format="PNG")
+        bio.seek(0)
         try:
-            img = ImageReader("logo.png")
-            c.drawImage(img, x_margin, y-12*mm, width=30*mm, height=12*mm, preserveAspectRatio=True, mask='auto')
+            img = ImageReader(bio)
+            c.drawImage(img, x_margin, y-12*mm, width=30*mm, height=12*mm,
+                        preserveAspectRatio=True, mask='auto')
             x_text = x_margin + 32*mm
         except Exception:
             pass
