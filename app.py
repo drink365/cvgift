@@ -1,4 +1,4 @@
-# app.py — 用同樣現金流，更聰明完成贈與｜單張保單一鍵試算（簡易模式）
+# app.py — 用同樣現金流，更聰明完成贈與｜單張保單一鍵試算（簡易/專家雙模式，穩定版）
 # 執行：streamlit run app.py
 # 需求：pip install streamlit pandas
 
@@ -15,8 +15,8 @@ RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL   = 100_000_000  # 單年現金投入上限：1 億
 
-# ---------------- 先初始化 Session State ----------------
-DEFAULTS = {"years": 8, "annual_cash": 6_000_000, "change_year": 2}
+# ---------------- 先初始化 Session State（避免直接賦值引發例外） ----------------
+DEFAULTS = {"years": 8, "annual_cash": 6_000_000, "change_year": 2, "simple_mode": True}
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -75,6 +75,9 @@ with st.expander("計算邏輯（點我展開）", expanded=False):
 - 本頁只比較**到變更當年**；變更後不再由一代繳保費（不再產生一代→二代的贈與）。
 """)
 
+# ---------------- 模式切換 ----------------
+st.session_state.simple_mode = st.toggle("簡易模式", value=st.session_state.simple_mode)
+
 # ---------------- 一鍵情境（用 callback 安全設定 state） ----------------
 def apply_preset(y: int, a: int, c: int):
     st.session_state.update({"years": y, "annual_cash": a, "change_year": c})
@@ -87,7 +90,7 @@ with colb2:
     st.button("一鍵情境：600 萬×8 年｜第 1 年變更",
               on_click=apply_preset, args=(8, 6_000_000, 1))
 
-# ---------------- 三個輸入（以 state 為預設值） ----------------
+# ---------------- 1) 三個輸入（以 state 為預設值） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
     years = st.number_input("年期（年）", min_value=1, max_value=40,
@@ -115,7 +118,7 @@ years = st.session_state.years
 annual = st.session_state.annual_cash
 change_year = st.session_state.change_year
 
-# ---------------- 自動生成：年末現金價值（預設比率） ----------------
+# ---------------- 2) 自動生成：年末現金價值（預設比率） ----------------
 rows, cum = [], 0
 for y in range(1, years+1):
     cum += annual
@@ -124,7 +127,7 @@ for y in range(1, years+1):
     rows.append({"年度": y, "每年投入（元）": annual, "累計投入（元）": cum, "年末現金價值（元）": cv})
 df_years = pd.DataFrame(rows)
 
-# ---------------- 稅務比較（算到第 N 年） ----------------
+# ---------------- 3) 稅務比較（算到第 N 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 
 # 用保單（第 N 年變更）：當年視為贈與 = 現金價值
@@ -149,7 +152,7 @@ for y in range(1, change_year+1):
 
 tax_saving = total_tax_no_policy - tax_with_policy
 
-# ---------------- 兩行說明（用保單／不用保單）＋重點指標 ----------------
+# ---------------- 4) 兩行說明（用保單／不用保單）＋重點指標 ----------------
 st.markdown(
     f"""<div class="small">
 <b>用保單</b>：第 <b>{change_year}</b> 年改到孩子名下，當年以 <b>現金價值</b> 認列贈與（通常低於累計投入）。<br>
@@ -171,9 +174,27 @@ with colC:
     st.markdown("**差異（節稅）**")
     card("到第 N 年節省的贈與稅", fmt_y(tax_saving))
 
-# ---------------- 明細（專家用，預設收合） ----------------
-with st.expander("想看公式與年度明細？（專家用）", expanded=False):
-    st.markdown("**年度明細（依預設比率自動生成）**")
+# ---------------- 5) 專家用：明細展開（依模式顯示） ----------------
+if st.session_state.simple_mode:
+    with st.expander("想看公式與年度明細？（專家用）", expanded=False):
+        st.markdown("**年度明細（依預設比率自動生成）**")
+        st.dataframe(
+            df_years.assign(
+                **{"每年投入（元）": lambda d: d["每年投入（元）"].map(fmt),
+                   "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
+                   "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt)}
+            ),
+            use_container_width=True
+        )
+
+        st.markdown("**不用保單：逐年現金贈與的稅額**")
+        df_no = pd.DataFrame(yearly_tax_list)
+        show_no = df_no.copy()
+        for c in ["現金贈與（元）","免稅後淨額（元）","應納贈與稅（元）"]:
+            show_no[c] = show_no[c].map(fmt_y)
+        st.dataframe(show_no, use_container_width=True)
+else:
+    st.subheader("年度明細（依預設比率自動生成）")
     st.dataframe(
         df_years.assign(
             **{"每年投入（元）": lambda d: d["每年投入（元）"].map(fmt),
@@ -182,8 +203,7 @@ with st.expander("想看公式與年度明細？（專家用）", expanded=False
         ),
         use_container_width=True
     )
-
-    st.markdown("**不用保單：逐年現金贈與的稅額**")
+    st.subheader("不用保單：逐年現金贈與的稅額")
     df_no = pd.DataFrame(yearly_tax_list)
     show_no = df_no.copy()
     for c in ["現金贈與（元）","免稅後淨額（元）","應納贈與稅（元）"]:
@@ -192,23 +212,9 @@ with st.expander("想看公式與年度明細？（專家用）", expanded=False
 
 st.divider()
 
-# ---------------- 規劃效果（對你/家族的好處） ----------------
+# ---------------- 6) 規劃效果（對你/家族的好處） ----------------
 st.subheader("規劃效果")
 st.markdown(f"""
 **① 同樣現金流，保護力更大**  
 - 不用保單：你只能把錢分年送出。  
-- 用保單：在**需要的那一刻**，由保險把保障**放大成保額**（依商品與試算書），讓家族安全網更完整。  
-
-**② 現金到位更確定**  
-- 保險給付不受市場波動影響，避免在緊急時刻折價出售股權或不動產，等於替你建立**流動性防火牆**。  
-
-**③ 政策性治理更到位**  
-- 你可以決定**第 {change_year} 年**交棒，把保單改到孩子名下；受益人與比例可事先設計（可搭配保險信託），避免一次性失衡與外力侵蝕。  
-- 透過**保單贈與（含變更要保人）**可做到**帳戶獨立管理**，與一般銀行帳戶切割，降低資金混同風險；亦具**婚姻財富治理**功能，清楚界定資金的專屬性與用途（如教育金、長照金）。  
-
-**④ 稅務更有效率**  
-- 用保單：只在**第 {change_year} 年**對「**現金價值**」課贈與稅（多數情況低於累計投入），到第 N 年的總稅負通常更低。  
-- 不用保單：第 1～{change_year} 年逐年以**現金贈與**達成移轉，各年依免稅額與累進稅率課稅；上方指標已呈現差異。
-""")
-
-st.caption("提示：年末現金價值與最終保額以保險公司試算書為準；本工具著重稅務計算與策略展示。")
+- 用保單：在**需要的那一刻**，由保險把保障**放大成保
