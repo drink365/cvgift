@@ -1,4 +1,4 @@
-# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更＋最終保額對照）
+# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更＋最終保額對照｜固定稅制｜全中文）
 # 執行：streamlit run app.py
 
 import math
@@ -10,7 +10,7 @@ st.set_page_config(page_title="保單贈與稅規劃器｜單一贈與人", layo
 # ---------------- 固定稅制常數（114年/2025 制） ----------------
 EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
 BR10_NET_MAX = 28_110_000  # 10% 淨額上限
-BR15_NET_MAX = 56,210,000  # 15% 淨額上限
+BR15_NET_MAX = 56_210_000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 # 單張年繳保費上限（且預設值）
@@ -63,7 +63,7 @@ st.markdown(
       ・累進稅率（以「淨額＝贈與總額−免稅額」計）：<br>
         &nbsp;&nbsp;— 淨額 ≤ <span class="num">{fmt(BR10_NET_MAX)}</span> ：10%<br>
         &nbsp;&nbsp;— {fmt(BR10_NET_MAX+1)} ～ {fmt(BR15_NET_MAX)} ：15%（含 10% 基礎稅額）<br>
-        &nbsp;&nbsp;— ＞ {fmt(BR15_NET_MAX)} ：20%（含 10%＋15% 基礎稅額）<br>
+        &nbsp;&nbsp;— ＞ <span class="num">{fmt(BR15_NET_MAX)}</span> ：20%（含 10%＋15% 基礎稅額）<br>
       ・要保人變更之贈與評價：第1年＝年繳×1/3；第2年＝兩年保費總額×1/4（＝年繳×0.5）。實務仍以保險公司試算書為準。
     </div>
     """,
@@ -73,14 +73,19 @@ st.markdown(
 # ---------------- 一、輸入目標與偏好 ----------------
 st.subheader("一、輸入目標與偏好")
 
-# 年期：用於「不用保單」對照與觀念一致（預設 8 年）
+# 年期（用於不用保單之對照）
 policy_years = st.number_input("年期（年）", min_value=1, max_value=30, value=8, step=1)
-target_yearly_prem = st.number_input("希望透過保單規劃的年繳總保費（元/年）",
-                                     min_value=0, step=100_000, value=30_000_000, format="%d")
 
-unit_policy_prem = st.number_input(f"單張保單建議年繳（元/年，≤ {fmt(MAX_POLICY_PREM)})",
-                                   min_value=100_000, max_value=MAX_POLICY_PREM,
-                                   step=100_000, value=MAX_POLICY_PREM, format="%d")
+target_yearly_prem = st.number_input(
+    "希望透過保單規劃的年繳總保費（元/年）",
+    min_value=0, step=100_000, value=30_000_000, format="%d"
+)
+
+unit_policy_prem = st.number_input(
+    f"單張保單建議年繳（元/年，≤ {fmt(MAX_POLICY_PREM)})",
+    min_value=100_000, max_value=MAX_POLICY_PREM,
+    step=100_000, value=MAX_POLICY_PREM, format="%d"
+)
 
 # 變更節奏與 RPU
 opt_mode = st.selectbox(
@@ -178,7 +183,6 @@ rows.append({"年度": "第2年", "贈與標的": desc_y2,
 # 第3年
 gift_y3_total = 0
 if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 3):
-    # 第3年如未 RPU，需要為所有已變更保單贈與保費
     total_changed = y1_change + y2_change
     gift_y3_total = total_changed * unit_policy_prem
 if gift_y3_total > 0:
@@ -188,7 +192,7 @@ if gift_y3_total > 0:
                  "贈與額": gift_y3_total, "免稅後淨額": net_y3,
                  "應納贈與稅": tax_y3, "適用稅率": rate_y3})
 
-# 第4年（僅示意到第4年）
+# 第4年（示意到第4年）
 gift_y4_total = 0
 if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 4):
     total_changed = y1_change + y2_change
@@ -212,11 +216,11 @@ for col in ["贈與額", "免稅後淨額", "應納贈與稅"]:
 st.dataframe(show, use_container_width=True)
 
 # ---------------- 四、合計與對照：法律移轉 vs 經濟價值 ----------------
-# 法律上已完成的贈與總額（= 當年度所有「贈與額」加總；稅是另一欄）
+# 法律上已完成的贈與總額（= 當年度所有「贈與額」加總）
 legal_total_with_policy = int(df["贈與額"].sum())
 total_tax_with_policy   = int(df["應納贈與稅"].sum())
 
-# 經濟上最終價值：依是否 RPU/哪一年 RPU，帶入對應的「最後保額」
+# 經濟上最終價值：依是否 RPU/哪一年 RPU 帶入對應保額
 if enable_rpu and rpu_year is not None:
     final_benefit = {2: benefit_rpu2, 3: benefit_rpu3, 4: benefit_rpu4}.get(rpu_year, 0)
     final_benefit_note = f"RPU 年：第{rpu_year}年"
@@ -246,5 +250,4 @@ st.markdown(
   ・經濟上最終拿到（受益人）：**{fmt_y(final_benefit)}**（{final_benefit_note}）
 """)
 
-# 友善提醒
 st.info("提醒：最終保額/RPU 後保額須以保險公司試算書為準；本頁以第1年=×1/3、第2年=×0.5 為保守近似做壓縮評價。")
