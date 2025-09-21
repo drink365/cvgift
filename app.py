@@ -1,4 +1,4 @@
-# app.py — 用同樣現金流，更聰明完成贈與｜單張保單一鍵試算（簡易/專家雙模式）
+# app.py — 用同樣現金流，更聰明完成贈與｜單張保單一鍵試算（簡易/專家雙模式，穩定版）
 # 執行：streamlit run app.py
 # 需求：pip install streamlit pandas
 
@@ -14,6 +14,15 @@ BR15_NET_MAX = 56_210_000  # 15% 淨額上限（淨額）
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL   = 100_000_000  # 單年現金投入上限：1 億
+
+# ---------------- 先初始化 Session State（避免直接賦值引發例外） ----------------
+DEFAULTS = {"years": 8, "annual_cash": 6_000_000, "change_year": 2, "simple_mode": True}
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+# 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8 年維持 95%
+RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 
 # ---------------- 樣式與小工具 ----------------
 st.markdown("""
@@ -66,49 +75,54 @@ with st.expander("計算邏輯（點我展開）", expanded=False):
 - 本頁只比較**到變更當年**；變更後不再由一代繳保費（不再產生一代→二代的贈與）。
 """)
 
-# ---------------- 模式切換 ----------------
-simple_mode = st.toggle("簡易模式", value=True)
+# ---------------- 模式切換（用 state 綁定） ----------------
+st.session_state.simple_mode = st.toggle("簡易模式", value=st.session_state.simple_mode)
 
-# ---------------- 1) 三個輸入（簡潔命名＋綁定 state，方便一鍵情境） ----------------
-col1, col2, col3 = st.columns(3)
-with col1:
-    years = st.number_input("年期（年）", min_value=1, max_value=40, value=8, step=1, key="years")
-with col2:
-    annual = st.number_input("每年要投入多少現金（元）", min_value=0, max_value=MAX_ANNUAL,
-                             value=6_000_000, step=100_000, format="%d", key="annual_cash")
-with col3:
-    change_year = st.number_input("第幾年把保單改到孩子名下（N）", min_value=1, max_value=40,
-                                  value=2, step=1, key="change_year")
+# ---------------- 一鍵情境：用 callback 安全設定 state ----------------
+def apply_preset(y: int, a: int, c: int):
+    st.session_state.update({"years": y, "annual_cash": a, "change_year": c})
 
-# 一鍵情境（600 萬 × 8 年，1/2 年變更）
 colb1, colb2 = st.columns(2)
 with colb1:
-    if st.button("一鍵情境：600 萬×8 年｜第 2 年變更"):
-        st.session_state.years = 8
-        st.session_state.annual_cash = 6_000_000
-        st.session_state.change_year = 2
-        st.rerun()
+    st.button("一鍵情境：600 萬×8 年｜第 2 年變更",
+              on_click=apply_preset, args=(8, 6_000_000, 2))
 with colb2:
-    if st.button("一鍵情境：600 萬×8 年｜第 1 年變更"):
-        st.session_state.years = 8
-        st.session_state.annual_cash = 6_000_000
-        st.session_state.change_year = 1
-        st.rerun()
+    st.button("一鍵情境：600 萬×8 年｜第 1 年變更",
+              on_click=apply_preset, args=(8, 6_000_000, 1))
+
+# ---------------- 1) 三個輸入（以 state 為預設值） ----------------
+col1, col2, col3 = st.columns(3)
+with col1:
+    years = st.number_input("年期（年）", min_value=1, max_value=40,
+                            value=st.session_state.years, step=1, key="years_input")
+with col2:
+    annual = st.number_input("每年要投入多少現金（元）", min_value=0, max_value=MAX_ANNUAL,
+                             value=st.session_state.annual_cash, step=100_000, format="%d", key="annual_input")
+with col3:
+    change_year = st.number_input("第幾年把保單改到孩子名下（N）", min_value=1, max_value=40,
+                                  value=st.session_state.change_year, step=1, key="change_input")
+
+# 同步回 state（避免型別/時序問題）
+st.session_state.years = int(years)
+st.session_state.annual_cash = int(annual)
+st.session_state.change_year = int(change_year)
 
 # 邏輯校驗
-if annual > MAX_ANNUAL:
+if st.session_state.annual_cash > MAX_ANNUAL:
     st.error("每年投入不可超過 1 億。"); st.stop()
-if change_year > years:
+if st.session_state.change_year > st.session_state.years:
     st.warning("變更年份不可超過年期，已自動調整為年期。")
-    change_year = years
+    st.session_state.change_year = st.session_state.years
+
+years = st.session_state.years
+annual = st.session_state.annual_cash
+change_year = st.session_state.change_year
 
 # ---------------- 2) 自動生成：年末現金價值（預設比率） ----------------
-# 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8 年維持 95%
-ratio_map = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 rows, cum = [], 0
 for y in range(1, years+1):
     cum += annual
-    ratio = ratio_map.get(y, 0.95)
+    ratio = RATIO_MAP.get(y, 0.95)
     cv = int(round(cum * ratio))
     rows.append({"年度": y, "每年投入（元）": annual, "累計投入（元）": cum, "年末現金價值（元）": cv})
 df_years = pd.DataFrame(rows)
@@ -128,7 +142,13 @@ for y in range(1, change_year+1):
     net = max(0, annual - EXEMPTION)
     t, rate = gift_tax(net)
     total_tax_no_policy += t
-    yearly_tax_list.append({"年度": y, "現金贈與（元）": annual, "免稅後淨額（元）": net, "應納贈與稅（元）": t, "適用稅率": rate})
+    yearly_tax_list.append({
+        "年度": y,
+        "現金贈與（元）": annual,
+        "免稅後淨額（元）": net,
+        "應納贈與稅（元）": t,
+        "適用稅率": rate
+    })
 
 tax_saving = total_tax_no_policy - tax_with_policy
 
@@ -152,8 +172,8 @@ with colC:
     st.markdown("**差異（節稅）**")
     card("到第 N 年節省的贈與稅", fmt_y(tax_saving))
 
-# ---------------- 5) 專家用：明細展開 ----------------
-if simple_mode:
+# ---------------- 5) 專家用：明細展開（依模式顯示） ----------------
+if st.session_state.simple_mode:
     with st.expander("想看公式與年度明細？（專家用）", expanded=False):
         st.markdown("**年度明細（依預設比率自動生成）**")
         st.dataframe(
@@ -172,7 +192,6 @@ if simple_mode:
             show_no[c] = show_no[c].map(fmt_y)
         st.dataframe(show_no, use_container_width=True)
 else:
-    # 專家模式直接顯示完整明細
     st.subheader("年度明細（依預設比率自動生成）")
     st.dataframe(
         df_years.assign(
@@ -204,7 +223,7 @@ st.markdown(f"""
 
 **③ 治理控管（誰拿、怎麼拿、何時拿）**  
 - ① 先由一代掌握要保人，在**第 {change_year} 年**交棒給二代；受益人與比例可設計（可搭配保險信託）避免一次性失衡或被外力侵蝕。  
-- ② 透過**保單贈與（含變更要保人）**可做到**帳戶獨立管理**，與一般銀行往來帳戶分離，降低資金混同風險；亦具**婚姻財富治理**功能，清楚界定資金的專屬性與用途（如教育金、長照金）。  
+- ② 透過**保單贈與（含變更要保人）**可做到**帳戶獨立管理**，與一般銀行往來混同切割；亦具**婚姻財富治理**功能，清楚界定資金的專屬性與用途（如教育金、長照金）。  
 
 **④ 稅務效果（變更年認列現金價值）**  
 - 用保單：只在**第 {change_year} 年**對「**現金價值**」課贈與稅（多數情況低於累計投入），因此**到第 N 年稅更有效率**。  
