@@ -1,11 +1,11 @@
-# app.py — 用同樣現金流，更聰明完成贈與｜單張保單一鍵試算（簡易模式｜高資產語氣＋高雅配色）
+# app.py — 保單規劃｜用同樣現金流，更聰明完成贈與（簡易模式｜高資產語氣＋高雅配色）
 # 執行：streamlit run app.py
 # 需求：pip install streamlit pandas
 
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="用同樣現金流，更聰明完成贈與｜單張保單一鍵試算", layout="centered")
+st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="centered")
 
 # ---------------- 稅制常數（114年/2025） ----------------
 EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
@@ -16,7 +16,7 @@ RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
-DEFAULTS = {"years": 8, "annual_cash": 6_000_000, "change_year": 2}
+DEFAULTS = {"years": 8, "annual_cash": 10_000_000, "change_year": 2}  # 預設改為 1,000 萬
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -105,7 +105,7 @@ def gift_tax(net: int):
     return int(round(base + extra)), "20%"
 
 # ---------------- 標題與導言 ----------------
-st.title("用同樣現金流，更聰明完成贈與")
+st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
 with st.expander("計算邏輯（供參）", expanded=False):
@@ -124,9 +124,9 @@ def apply_preset(y: int, a: int, c: int):
 
 c1, c2 = st.columns(2)
 with c1:
-    st.button("一鍵示範：600 萬 × 8 年｜第 2 年變更", on_click=apply_preset, args=(8, 6_000_000, 2))
+    st.button("一鍵示範：1,000 萬 × 8 年｜第 2 年變更", on_click=apply_preset, args=(8, 10_000_000, 2))
 with c2:
-    st.button("一鍵示範：600 萬 × 8 年｜第 1 年變更", on_click=apply_preset, args=(8, 6_000_000, 1))
+    st.button("一鍵示範：1,000 萬 × 8 年｜第 1 年變更", on_click=apply_preset, args=(8, 10_000_000, 1))
 
 # ---------------- 三個輸入（以 state 為預設值） ----------------
 col1, col2, col3 = st.columns(3)
