@@ -57,21 +57,25 @@ hr.custom{ border:none; border-top:1px solid var(--line); margin:12px 0 6px; }
 
 /* 預設按鈕列 */
 .preset-wrap{ display:flex; gap:16px; margin:6px 0 10px; }
-.preset .stButton>button{ padding:.60rem 1rem; border-radius:999px; font-weight:700; width:100%; }
-
-/* 套用中的按鈕：香檳金底＋陰影＋粗體＋小光暈 */
-.preset.primary .stButton>button{
-  background:var(--gold); color:var(--gold-ink);
-  border:1px solid var(--gold);
-  box-shadow:0 4px 10px rgba(200,169,106,.35);
+.preset .stButton>button{
+  padding:.60rem 1rem; border-radius:999px; width:100%;
+  font-weight:700 !important; transition:all .15s ease;
 }
 
-/* 未套用：白底描邊，滑過才上色 */
+/* 套用中：香檳金底＋粗金框＋陰影（加上 !important 以確保套用） */
+.preset.primary .stButton>button{
+  background:var(--gold) !important;
+  color:var(--gold-ink) !important;
+  border:2px solid var(--gold) !important;
+  box-shadow:0 6px 14px rgba(200,169,106,.35) !important;
+}
+
+/* 非套用：白底描邊；hover 提示金色 */
 .preset.outline .stButton>button{
-  background:#fff; color:var(--ink); border:1px solid var(--line);
+  background:#fff !important; color:var(--ink) !important; border:1px solid var(--line) !important;
 }
 .preset.outline .stButton>button:hover{
-  border-color:var(--gold); color:var(--gold-ink); background:#fff7e6;
+  border-color:var(--gold) !important; color:var(--gold-ink) !important; background:#fff7e6 !important;
 }
 </style>
 """,
@@ -113,7 +117,7 @@ with st.expander("規劃摘要", expanded=True):
 '''
     )
 
-# ---------------- 一鍵示範（修正：同步更新元件 key＋強化視覺） ----------------
+# ---------------- 一鍵示範（同步更新輸入元件＋強化視覺） ----------------
 def apply_preset(name: str, y: int, a: int, c: int):
     # 更新邏輯用 state
     st.session_state.update({"years": y, "annual_cash": a, "change_year": c})
@@ -129,7 +133,7 @@ with colp1:
     active = (st.session_state.active_preset == "p1")
     cclass = "preset primary" if active else "preset outline"
     st.markdown(f'<div class="{cclass}">', unsafe_allow_html=True)
-    label1 = "✓ 套用中｜1,000 萬 × 8 年｜第 2 年變更" if active else "一鍵示範：1,000 萬 × 8 年｜第 2 年變更"
+    label1 = ("✓ " if active else "") + "一鍵示範：1,000 萬 × 8 年｜第 2 年變更"
     st.button(label1, key="btn_p1", on_click=apply_preset, args=("p1", 8, 10_000_000, 2))
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -137,13 +141,13 @@ with colp2:
     active = (st.session_state.active_preset == "p2")
     cclass = "preset primary" if active else "preset outline"
     st.markdown(f'<div class="{cclass}">', unsafe_allow_html=True)
-    label2 = "✓ 套用中｜1,000 萬 × 8 年｜第 1 年變更" if active else "一鍵示範：1,000 萬 × 8 年｜第 1 年變更"
+    label2 = ("✓ " if active else "") + "一鍵示範：1,000 萬 × 8 年｜第 1 年變更"
     st.button(label2, key="btn_p2", on_click=apply_preset, args=("p2", 8, 10_000_000, 1))
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------------- 三個輸入（直接綁定到 *_input key，上面 callback 已同步） ----------------
+# ---------------- 三個輸入（直接綁定到 *_input key） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
     years = st.number_input("年期（年）", min_value=1, max_value=40,
@@ -155,7 +159,7 @@ with col3:
     change_year = st.number_input("第幾年變更要保人（交棒）", min_value=1, max_value=40,
                                   value=st.session_state.change_input, step=1, key="change_input")
 
-# 同步「邏輯用 state」
+# 同步邏輯用 state
 st.session_state.years = int(st.session_state.years_input)
 st.session_state.annual_cash = int(st.session_state.annual_input)
 st.session_state.change_year = int(st.session_state.change_input)
