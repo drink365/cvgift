@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="centered")
+st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="wide")
 
 # ---------------- 稅制常數（114年/2025） ----------------
 EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
