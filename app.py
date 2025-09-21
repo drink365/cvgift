@@ -1,4 +1,4 @@
-# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更｜全中文）
+# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更＋最終保額對照）
 # 執行：streamlit run app.py
 
 import math
@@ -10,7 +10,7 @@ st.set_page_config(page_title="保單贈與稅規劃器｜單一贈與人", layo
 # ---------------- 固定稅制常數（114年/2025 制） ----------------
 EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
 BR10_NET_MAX = 28_110_000  # 10% 淨額上限
-BR15_NET_MAX = 56_210_000  # 15% 淨額上限
+BR15_NET_MAX = 56,210,000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 # 單張年繳保費上限（且預設值）
@@ -73,6 +73,8 @@ st.markdown(
 # ---------------- 一、輸入目標與偏好 ----------------
 st.subheader("一、輸入目標與偏好")
 
+# 年期：用於「不用保單」對照與觀念一致（預設 8 年）
+policy_years = st.number_input("年期（年）", min_value=1, max_value=30, value=8, step=1)
 target_yearly_prem = st.number_input("希望透過保單規劃的年繳總保費（元/年）",
                                      min_value=0, step=100_000, value=30_000_000, format="%d")
 
@@ -80,12 +82,11 @@ unit_policy_prem = st.number_input(f"單張保單建議年繳（元/年，≤ {f
                                    min_value=100_000, max_value=MAX_POLICY_PREM,
                                    step=100_000, value=MAX_POLICY_PREM, format="%d")
 
-# 變更節奏：可指定「第1年先變更幾張」，其餘在第2年變更
+# 變更節奏與 RPU
 opt_mode = st.selectbox(
     "策略取向（影響 RPU 時點與是否需要續贈現金）",
     ["稅最省（第2年變更為主）", "保額優先（第2年變更＋多繳1年）", "保額最大（第2年變更＋多繳2年）"]
 )
-
 enable_rpu = st.checkbox("啟用減額繳清（RPU）", value=True)
 rpu_mode = "自動建議"
 manual_year = None
@@ -93,6 +94,17 @@ if enable_rpu:
     rpu_mode = st.radio("RPU 年份選擇", ["自動建議", "手動指定"], horizontal=True)
     if rpu_mode == "手動指定":
         manual_year = st.select_slider("選擇 RPU 年（相對於變更在第2年）", options=[2, 3, 4], value=2)
+
+# 受益人最後拿到的保額（用試算書填入）
+st.subheader("（選填）受益人最後拿到的保額")
+benefit_full = st.number_input("不做 RPU、繼續繳滿的預計保額（元）", min_value=0, step=1_000_000, value=90_000_000, format="%d")
+col_b2, col_b3, col_b4 = st.columns(3)
+with col_b2:
+    benefit_rpu2 = st.number_input("第2年 RPU 預估保額（元）", min_value=0, step=1_000_000, value=0, format="%d")
+with col_b3:
+    benefit_rpu3 = st.number_input("第3年 RPU 預估保額（元）", min_value=0, step=1_000_000, value=0, format="%d")
+with col_b4:
+    benefit_rpu4 = st.number_input("第4年 RPU 預估保額（元）", min_value=0, step=1_000_000, value=0, format="%d")
 
 if target_yearly_prem == 0:
     st.info("請輸入年繳總保費目標。")
@@ -113,8 +125,8 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 新增：第1年先變更幾張（0～全部）
-y1_change = st.slider("第1年欲先變更的張數（其餘將在第2年變更）",
+# 第1年先變更幾張（0～全部）
+y1_change = st.slider("第1年先變更的張數（其餘在第2年變更）",
                       min_value=0, max_value=num_policies, value=0, step=1)
 y2_change = num_policies - y1_change
 
@@ -135,7 +147,7 @@ st.subheader("二、年度贈與稅排程（單一贈與人）")
 
 rows = []
 
-# 第1年：變更 y1_change 張（若=0，則只顯示不變更）
+# 第1年
 if y1_change == 0:
     rows.append({"年度": "第1年", "贈與標的": "—（不變更）", "贈與額": 0,
                  "免稅後淨額": 0, "應納贈與稅": 0, "適用稅率": "—"})
@@ -146,15 +158,13 @@ else:
     rows.append({"年度": "第1年", "贈與標的": f"變更要保人（{y1_change} 張；評價＝年繳×1/3）",
                  "贈與額": gift_y1, "免稅後淨額": net_y1, "應納贈與稅": tax_y1, "適用稅率": rate_y1})
 
-# 第2年：變更 y2_change 張；同時可能需贈與「第1年已變更那批」的年繳保費（若 RPU 晚於第2年）
+# 第2年：變更剩餘張數 + 若第1年已變更那批需由上一代資助保費，列入現金贈與
 gift_y2_change = int(round(y2_change * unit_policy_prem * 0.5))  # 第2年評價=年繳×0.5
 gift_y2_cash   = 0
 if y1_change > 0 and (not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 2)):
     gift_y2_cash = y1_change * unit_policy_prem  # 幫第1年已變更之保單，繳第2年保費
 
 gift_y2_total = gift_y2_change + gift_y2_cash
-net_y2        = max(0, gift_y2_total - (0 if y1_change>0 else EXEMPTION) )  # 免稅額每年一次：這裡第2年仍可用一次免稅額
-# 說明：上面可依需求改為每年都使用 EXEMPTION；此處保持「每年各自一次」邏輯
 net_y2        = max(0, gift_y2_total - EXEMPTION)
 tax_y2, rate_y2 = gift_tax_by_bracket(net_y2)
 
@@ -165,10 +175,12 @@ rows.append({"年度": "第2年", "贈與標的": desc_y2,
              "贈與額": gift_y2_total, "免稅後淨額": net_y2,
              "應納贈與稅": tax_y2, "適用稅率": rate_y2})
 
-# 第3年：若 RPU 晚於第3年，則要幫「第1年批＋第2年批」繳保費
+# 第3年
 gift_y3_total = 0
 if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 3):
-    gift_y3_total = (y1_change + y2_change) * unit_policy_prem
+    # 第3年如未 RPU，需要為所有已變更保單贈與保費
+    total_changed = y1_change + y2_change
+    gift_y3_total = total_changed * unit_policy_prem
 if gift_y3_total > 0:
     net_y3  = max(0, gift_y3_total - EXEMPTION)
     tax_y3, rate_y3 = gift_tax_by_bracket(net_y3)
@@ -176,10 +188,11 @@ if gift_y3_total > 0:
                  "贈與額": gift_y3_total, "免稅後淨額": net_y3,
                  "應納贈與稅": tax_y3, "適用稅率": rate_y3})
 
-# 第4年：若 RPU 在第4年之後，仍需再贈與一次（本工具上限示意至第4年）
+# 第4年（僅示意到第4年）
 gift_y4_total = 0
 if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 4):
-    gift_y4_total = (y1_change + y2_change) * unit_policy_prem
+    total_changed = y1_change + y2_change
+    gift_y4_total = total_changed * unit_policy_prem
 if gift_y4_total > 0:
     net_y4  = max(0, gift_y4_total - EXEMPTION)
     tax_y4, rate_y4 = gift_tax_by_bracket(net_y4)
@@ -198,27 +211,40 @@ for col in ["贈與額", "免稅後淨額", "應納贈與稅"]:
     show[col] = show[col].map(fmt_y)
 st.dataframe(show, use_container_width=True)
 
-total_tax = int(df["應納贈與稅"].sum())
-rpu_note = f"；RPU 年：第{rpu_year}年" if enable_rpu and rpu_year is not None else "；未啟用 RPU"
-st.markdown(f"**至目前排程的累計應納贈與稅**：**{fmt_y(total_tax)}**（單一贈與人）{rpu_note}。")
+# ---------------- 四、合計與對照：法律移轉 vs 經濟價值 ----------------
+# 法律上已完成的贈與總額（= 當年度所有「贈與額」加總；稅是另一欄）
+legal_total_with_policy = int(df["贈與額"].sum())
+total_tax_with_policy   = int(df["應納贈與稅"].sum())
 
-st.divider()
+# 經濟上最終價值：依是否 RPU/哪一年 RPU，帶入對應的「最後保額」
+if enable_rpu and rpu_year is not None:
+    final_benefit = {2: benefit_rpu2, 3: benefit_rpu3, 4: benefit_rpu4}.get(rpu_year, 0)
+    final_benefit_note = f"RPU 年：第{rpu_year}年"
+else:
+    final_benefit = benefit_full
+    final_benefit_note = "不做 RPU／繼續繳滿"
 
-# ---------------- 10% 內之承作上限參考 ----------------
-st.subheader("三、在 10% 稅率內的承作上限（單一贈與人）")
-cap_gross_10   = EXEMPTION + BR10_NET_MAX      # 244萬 + 2,811萬 = 3,055萬
-cap_y2_yearly  = cap_gross_10 * 2              # 第2年變更：年繳上限 = 2×cap
-cap_y1_first   = cap_gross_10 * 3              # 第1年變更：首年年繳上限 = 3×cap
-st.write(f"- 若第2年變更：每年可承作之年繳上限約 **{fmt_y(cap_y2_yearly)}**。")
-st.write(f"- 若第1年變更：首年可承作之年繳上限約 **{fmt_y(cap_y1_first)}**。")
-st.info("此頁以第1/第2年係數近似；若需第3年以後才變更，建議改以保險公司試算書之『當年現金價值』直接輸入估算。")
+# 「完全不透過保單」對照（同年期、同年繳現金直接贈與）
+no_policy_annual_gift = actual_yearly_prem
+no_policy_annual_net  = max(0, no_policy_annual_gift - EXEMPTION)
+no_policy_annual_tax, _rate = gift_tax_by_bracket(no_policy_annual_net)
+legal_total_no_policy = int(no_policy_annual_gift * policy_years)
+total_tax_no_policy   = int(no_policy_annual_tax * policy_years)
+economic_no_policy    = legal_total_no_policy  # 經濟上就是拿到現金總額
 
-st.divider()
+st.markdown("### 三、總結對照")
+st.markdown(
+    f"""
+- **不用保單（直接現金贈與）**  
+  ・法律上移轉金額合計：**{fmt_y(legal_total_no_policy)}**  
+  ・累計贈與稅：**{fmt_y(total_tax_no_policy)}**  
+  ・經濟上最終拿到：**{fmt_y(economic_no_policy)}**（現金分年入帳）
 
-st.subheader("四、說明與提醒")
-st.markdown("""
-- 可用滑桿決定「第1年先變更幾張」，其餘在第2年變更；系統會自動把變更後、RPU 前需續繳的保費列為當年的現金贈與。  
-- RPU（減額繳清）勾選後，可自動或手動設定在第2/3/4年；RPU 年起停止現金繳費，但保額會依當時現金價值等比例縮小。  
-- 贈與行為發生後 30 日內申報；請向保險公司索取變更當日之現金價值證明。  
-- 夫妻兩位贈與人可把保費/贈與分攤至兩人，使每位年度淨額較容易維持在 10% 級距內。
+- **透過保單（本頁設定）**  
+  ・法律上移轉金額合計（含變更＋續年現金贈與）：**{fmt_y(legal_total_with_policy)}**  
+  ・累計贈與稅：**{fmt_y(total_tax_with_policy)}**  
+  ・經濟上最終拿到（受益人）：**{fmt_y(final_benefit)}**（{final_benefit_note}）
 """)
+
+# 友善提醒
+st.info("提醒：最終保額/RPU 後保額須以保險公司試算書為準；本頁以第1年=×1/3、第2年=×0.5 為保守近似做壓縮評價。")
