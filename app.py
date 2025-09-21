@@ -7,7 +7,7 @@ import pandas as pd
 st.set_page_config(page_title="贈與稅 × 保單要保人變更｜單一贈與人試算", layout="centered")
 
 # ------------------------- Constants (editable via UI) -------------------------
-DEFAULT_EXEMPTION = 2_440_000          # 年免稅額（單一贈與人）
+DEFAULT_EXEMPTION = 2_440_000            # 年免稅額（單一贈與人）
 DEFAULT_BRACKET_10_MAX_NET = 28_110_000  # 10% 級距淨額上限
 DEFAULT_BRACKET_15_MAX_NET = 56_210_000  # 15% 級距淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
@@ -28,6 +28,21 @@ def gift_tax(net: float, br10: int, br15: int):
     extra = (net - br15) * RATE_20
     return base + extra, RATE_20, base
 
+# ------------------------------ Global Styles ---------------------------------
+st.markdown(
+    """
+    <style>
+      /* 小KPI：與一般字同大小，但加粗；左右對齊乾淨 */
+      .kpi {display:flex; flex-direction:column; gap:2px; padding:6px 0;}
+      .kpi .label {color:#5f6368; font-size:0.95rem;}
+      .kpi .value {font-weight:700; font-size:1rem; line-height:1.2;}
+      /* 表格內數字置右更好讀 */
+      .dataframe td:nth-child(2), .dataframe td:nth-child(4) { text-align:right; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # ------------------------------- Sidebar --------------------------------------
 with st.sidebar:
     st.markdown("### 參數調整（若法規異動可在此微調）")
@@ -40,11 +55,11 @@ with st.sidebar:
 
 # ------------------------------ Header ----------------------------------------
 st.title("贈與稅 × 保單要保人變更｜單一贈與人試算")
-st.caption("說明：預設採 2025（114年）台灣贈與稅級距；夫妻欲套用 X2，將結果倍增即可。")
+st.caption("預設採 2025（114年）台灣贈與稅級距；夫妻要套用 X2，將結果倍增即可。")
 
 # ------------------------------ Inputs ----------------------------------------
 st.subheader("一、保單變更要保人（當年合併計算）")
-st.markdown("第1年評價＝**年繳×1/3**；第2年評價＝**兩年累計保費×1/4**（等於年繳×0.5）。")
+st.markdown("第1年評價＝**年繳 × 1/3**；第2年評價＝**兩年累計保費 × 1/4**（≈ 年繳 × 0.5）。")
 
 n = st.number_input("本年度要變更要保人的保單張數", min_value=0, max_value=20, value=3, step=1)
 total_ownerchange_gift = 0.0
@@ -65,7 +80,8 @@ for i in range(n):
         cv = (prem * 2) * (1/4)  # 兩年總保費 × 1/4 = 年繳 × 0.5
     total_ownerchange_gift += cv
     with c3:
-        st.metric("贈與評價（現金價值）", f"${fmt(cv)}")
+        st.markdown(f"<div class='kpi'><div class='label'>贈與評價（現金價值）</div>"
+                    f"<div class='value'>${fmt(cv)}</div></div>", unsafe_allow_html=True)
     rows.append({"#": i+1, "年繳保費": fmt(prem),
                  "變更時點": "第1年" if when.startswith("第1年") else "第2年",
                  "贈與評價（元）": fmt(cv)})
@@ -85,20 +101,22 @@ st.subheader("三、合併計算（本年度）")
 gross = total_ownerchange_gift + cash_gift
 net = max(0.0, gross - exemption)
 tax, applied_rate, base_tax = gift_tax(net, br10, br15)
+rate_label = "10%" if applied_rate == RATE_10 else ("15%" if applied_rate == RATE_15 else ("20%" if applied_rate == RATE_20 else "—"))
 
 cA, cB, cC = st.columns(3)
 with cA:
-    st.metric("合併贈與總額（元）", f"${fmt(gross)}")
+    st.markdown(f"<div class='kpi'><div class='label'>合併贈與總額（元）</div>"
+                f"<div class='value'>${fmt(gross)}</div></div>", unsafe_allow_html=True)
 with cB:
-    st.metric("扣除免稅額後之應稅額（元）", f"${fmt(net)}")
+    st.markdown(f"<div class='kpi'><div class='label'>扣除免稅額後之應稅額（元）</div>"
+                f"<div class='value'>${fmt(net)}</div></div>", unsafe_allow_html=True)
 with cC:
-    rate_label = "10%" if applied_rate == RATE_10 else ("15%" if applied_rate == RATE_15 else ("20%" if applied_rate == RATE_20 else "—"))
-    st.metric("適用稅率", rate_label)
+    st.markdown(f"<div class='kpi'><div class='label'>適用稅率</div>"
+                f"<div class='value'>{rate_label}</div></div>", unsafe_allow_html=True)
 
 st.markdown(f"### ➤ 本年度**應納贈與稅**：**${fmt(tax)}**")
 
 with st.expander("試算細節"):
-    # 分成兩條列出，避免 % 與數字黏連造成渲染異常
     st.markdown(f"- 單一贈與人免稅額：**${fmt(exemption)}**")
     st.markdown(f"- **10%** 淨額上限：**${fmt(br10)}**")
     st.markdown(f"- **15%** 淨額上限：**${fmt(br15)}**")
