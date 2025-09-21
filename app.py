@@ -1,4 +1,4 @@
-# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更＋最終保額對照｜固定稅制｜全中文）
+# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更＋最終保額對照｜固定稅制｜全中文｜Y1=1/3、Y2=1/2）
 # 執行：streamlit run app.py
 
 import math
@@ -27,9 +27,6 @@ st.markdown("""
 <style>
   .num { font-weight: 700; font-variant-numeric: tabular-nums; }
   .bullet { margin: 0.2rem 0; }
-  .kpi {display:flex; flex-direction:column; gap:2px; padding:6px 0;}
-  .kpi .label {color:#5f6368; font-size:0.95rem;}
-  .kpi .value {font-weight:700; font-size:1rem; line-height:1.2;}
   .dataframe td:nth-child(3),
   .dataframe td:nth-child(4),
   .dataframe td:nth-child(5) { text-align:right; }
@@ -64,7 +61,10 @@ st.markdown(
         &nbsp;&nbsp;— 淨額 ≤ <span class="num">{fmt(BR10_NET_MAX)}</span> ：10%<br>
         &nbsp;&nbsp;— {fmt(BR10_NET_MAX+1)} ～ {fmt(BR15_NET_MAX)} ：15%（含 10% 基礎稅額）<br>
         &nbsp;&nbsp;— ＞ <span class="num">{fmt(BR15_NET_MAX)}</span> ：20%（含 10%＋15% 基礎稅額）<br>
-      ・要保人變更之贈與評價：第1年＝年繳×1/3；第2年＝兩年保費總額×1/4（＝年繳×0.5）。實務仍以保險公司試算書為準。
+      ・要保人變更之贈與評價（保守近似，實務仍以保險公司試算書為準）：<br>
+        &nbsp;&nbsp;— 第1年：<b>現金價值＝累計保費 × 1/3</b><br>
+        &nbsp;&nbsp;— 第2年：<b>現金價值＝累計保費 × 1/2（= 年繳 × 1.0）</b><br>
+      ・現金價值通常逐年上升、趨近累計保費；不同公司/商品會有差異。
     </div>
     """,
     unsafe_allow_html=True
@@ -152,35 +152,35 @@ st.subheader("二、年度贈與稅排程（單一贈與人）")
 
 rows = []
 
-# 第1年
+# 第1年：Y1 係數 = 累計×1/3 → 單張評價 = 年繳×1/3
 if y1_change == 0:
     rows.append({"年度": "第1年", "贈與標的": "—（不變更）", "贈與額": 0,
                  "免稅後淨額": 0, "應納贈與稅": 0, "適用稅率": "—"})
 else:
-    gift_y1 = int(round(y1_change * unit_policy_prem * (1/3)))  # 第1年評價=年繳×1/3
+    gift_y1 = int(round(y1_change * unit_policy_prem * (1/3)))
     net_y1  = max(0, gift_y1 - EXEMPTION)
     tax_y1, rate_y1 = gift_tax_by_bracket(net_y1)
     rows.append({"年度": "第1年", "贈與標的": f"變更要保人（{y1_change} 張；評價＝年繳×1/3）",
                  "贈與額": gift_y1, "免稅後淨額": net_y1, "應納贈與稅": tax_y1, "適用稅率": rate_y1})
 
-# 第2年：變更剩餘張數 + 若第1年已變更那批需由上一代資助保費，列入現金贈與
-gift_y2_change = int(round(y2_change * unit_policy_prem * 0.5))  # 第2年評價=年繳×0.5
-gift_y2_cash   = 0
+# 第2年：Y2 係數 = 累計×1/2 → 單張評價 = 年繳×1.0
+gift_y2_change = int(round(y2_change * unit_policy_prem * 1.0))
+gift_y2_cash   = 0  # 若第1年已變更的那批，RPU 晚於第2年，則需要贈與現金幫其繳第2年保費
 if y1_change > 0 and (not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 2)):
-    gift_y2_cash = y1_change * unit_policy_prem  # 幫第1年已變更之保單，繳第2年保費
+    gift_y2_cash = y1_change * unit_policy_prem
 
 gift_y2_total = gift_y2_change + gift_y2_cash
 net_y2        = max(0, gift_y2_total - EXEMPTION)
 tax_y2, rate_y2 = gift_tax_by_bracket(net_y2)
 
-desc_y2 = f"變更要保人（{y2_change} 張；評價＝年繳×0.5）"
+desc_y2 = f"變更要保人（{y2_change} 張；評價＝年繳×1.0）"
 if gift_y2_cash > 0:
     desc_y2 += f" ＋ 現金贈與（為第1年已變更之 {y1_change} 張繳保費）"
 rows.append({"年度": "第2年", "贈與標的": desc_y2,
              "贈與額": gift_y2_total, "免稅後淨額": net_y2,
              "應納贈與稅": tax_y2, "適用稅率": rate_y2})
 
-# 第3年
+# 第3年：若尚未 RPU，需為全部已變更保單贈與保費
 gift_y3_total = 0
 if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 3):
     total_changed = y1_change + y2_change
@@ -250,4 +250,15 @@ st.markdown(
   ・經濟上最終拿到（受益人）：**{fmt_y(final_benefit)}**（{final_benefit_note}）
 """)
 
-st.info("提醒：最終保額/RPU 後保額須以保險公司試算書為準；本頁以第1年=×1/3、第2年=×0.5 為保守近似做壓縮評價。")
+st.info("提醒：最終保額/RPU 後保額須以保險公司試算書為準；本頁以第1年=×1/3、第2年=×1/2 為保守近似做壓縮評價。")
+
+st.divider()
+
+# ---------------- 10% 內之承作上限參考（依新係數） ----------------
+st.subheader("四、在 10% 稅率內的承作上限（單一贈與人）")
+cap_gross_10   = EXEMPTION + BR10_NET_MAX      # 244萬 + 2,811萬
+cap_y2_yearly  = cap_gross_10 * 1              # 第2年變更：單張評價=年繳×1.0 ⇒ 年繳上限 = 免稅＋10%淨額上限
+cap_y1_first   = cap_gross_10 * 3              # 第1年變更：單張評價=年繳×1/3 ⇒ 年繳上限 = 3×cap
+st.write(f"- 若第2年變更：每位贈與人、每年可承作之年繳上限約 **{fmt_y(cap_y2_yearly)}**（維持 10% 級距）。")
+st.write(f"- 若第1年變更：首年可承作之年繳上限約 **{fmt_y(cap_y1_first)}**（維持 10% 級距）。")
+st.caption("以上僅就『變更當年』的評價額推算；若同年另有現金贈與（資助續繳），需併計當年淨額。")
