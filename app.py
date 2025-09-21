@@ -1,4 +1,4 @@
-# app.py — Policy Gift-Tax Planner (Single Donor) with per-policy cap 6,000,000
+# app.py — Policy Gift-Tax Planner (Single Donor) with per-policy cap 6,000,000 (default 6,000,000)
 # Run: streamlit run app.py
 
 import math
@@ -13,10 +13,11 @@ DEFAULT_BR10_MAX_NET = 28_110_000
 DEFAULT_BR15_MAX_NET = 56_210_000
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
-# 單張年繳保費上限
+# 單張年繳保費上限（且預設值）
 MAX_POLICY_PREM = 6_000_000
 
-def fmt(n): return f"{n:,.0f}"
+def fmt(n): 
+    return f"{n:,.0f}"
 
 def gift_tax_by_bracket(net, br10, br15):
     if net <= 0: return 0, "—"
@@ -48,11 +49,14 @@ target_yearly_prem = st.number_input(
     min_value=0, step=100_000, value=12_000_000, format="%d"
 )
 
-# 單張年繳限制：最大 600 萬
+# 單張年繳：上限 600 萬，預設值 600 萬，可下修不可超過
 unit_policy_prem = st.number_input(
     f"單張保單「建議年繳」（元/年，≤ {fmt(MAX_POLICY_PREM)})",
-    min_value=100_000, max_value=MAX_POLICY_PREM, step=100_000,
-    value=min(1_200_000, MAX_POLICY_PREM), format="%d"
+    min_value=100_000,
+    max_value=MAX_POLICY_PREM,
+    step=100_000,
+    value=MAX_POLICY_PREM,   # 預設填 6,000,000
+    format="%d"
 )
 
 opt_mode = st.selectbox(
@@ -74,7 +78,7 @@ if target_yearly_prem == 0:
     st.stop()
 
 # ---------------- 系統建議張數（套用單張上限） ----------------
-# 若使用者用程式外部改值，仍保護上限
+# 再保護一次（即使外部改值也不超上限）
 unit_policy_prem = min(unit_policy_prem, MAX_POLICY_PREM)
 
 # 張數向上取整
