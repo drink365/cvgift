@@ -1,4 +1,4 @@
-# app.py — 保單贈與稅規劃器（單一贈與人｜全中文｜金額皆為新台幣）
+# app.py — 保單贈與稅規劃器（單一贈與人｜固定稅制說明｜全中文）
 # 執行：streamlit run app.py
 
 import math
@@ -7,16 +7,16 @@ import streamlit as st
 
 st.set_page_config(page_title="保單贈與稅規劃器｜單一贈與人", layout="centered")
 
-# ---------------- 稅制常數（可在側欄微調） ----------------
-DEFAULT_EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
-DEFAULT_BR10_MAX_NET = 28_110_000  # 10% 淨額上限
-DEFAULT_BR15_MAX_NET = 56_210_000  # 15% 淨額上限
+# ---------------- 固定稅制常數（114年/2025 制） ----------------
+EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
+BR10_NET_MAX = 28_110_000  # 10% 淨額上限
+BR15_NET_MAX = 56_210_000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 # 單張年繳保費上限（且預設值）
 MAX_POLICY_PREM = 6_000_000
 
-# --------- 共用：數字格式與樣式 ----------
+# ---------------- 共用樣式與格式 ----------------
 def fmt(n: float) -> str:
     return f"{n:,.0f}"
 
@@ -25,44 +25,54 @@ def fmt_y(n: float) -> str:
 
 st.markdown("""
 <style>
-  /* 數字用同一字重與等寬樣式，避免跳字 */
   .num { font-weight: 700; font-variant-numeric: tabular-nums; }
   .bullet { margin: 0.2rem 0; }
-  /* KPI：不放大字，只加粗 */
   .kpi {display:flex; flex-direction:column; gap:2px; padding:6px 0;}
   .kpi .label {color:#5f6368; font-size:0.95rem;}
   .kpi .value {font-weight:700; font-size:1rem; line-height:1.2;}
-  /* 表格內金額靠右更好讀 */
   .dataframe td:nth-child(3),
   .dataframe td:nth-child(4),
   .dataframe td:nth-child(5) { text-align:right; }
+  .note { background:#f7f7fb; border:1px solid #ececf3; padding:12px 14px; border-radius:8px; }
 </style>
 """, unsafe_allow_html=True)
 
-def gift_tax_by_bracket(net, br10, br15):
-    if net <= 0: return 0, "—"
-    if net <= br10: return int(round(net * RATE_10)), "10%"
-    if net <= br15:
-        base = br10 * RATE_10
-        extra = (net - br10) * RATE_15
+def gift_tax_by_bracket(net):
+    """依固定稅制計算贈與稅（含基稅）；回傳(稅額, 最高適用稅率字串)"""
+    if net <= 0:
+        return 0, "—"
+    if net <= BR10_NET_MAX:
+        return int(round(net * RATE_10)), "10%"
+    if net <= BR15_NET_MAX:
+        base = BR10_NET_MAX * RATE_10
+        extra = (net - BR10_NET_MAX) * RATE_15
         return int(round(base + extra)), "15%"
-    base = br10 * RATE_10 + (br15 - br10) * RATE_15
-    extra = (net - br15) * RATE_20
+    base = BR10_NET_MAX * RATE_10 + (BR15_NET_MAX - BR10_NET_MAX) * RATE_15
+    extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# ---------------- 側欄調整 ----------------
-with st.sidebar:
-    st.header("參數調整")
-    exemption = st.number_input("年免稅額（單一贈與人）", 0, None, DEFAULT_EXEMPTION, 10_000, format="%d")
-    br10 = st.number_input("10% 淨額上限", 0, None, DEFAULT_BR10_MAX_NET, 10_000, format="%d")
-    br15 = st.number_input("15% 淨額上限", 0, None, DEFAULT_BR15_MAX_NET, 10_000, format="%d")
-    st.caption("若法規未來調整，於此微調即可。")
-
-# ---------------- 標題 ----------------
+# ---------------- 標題與「稅制說明」 ----------------
 st.title("保單贈與稅規劃器（單一贈與人）")
-st.caption("預設採 2025（114年）台灣贈與稅級距；若為夫妻兩位贈與人，可將容量與結果視情況 ×2。所有金額單位：新台幣。")
+st.caption("所有金額單位：新台幣。建議若為夫妻兩位贈與人，可視情況將容量與結果 ×2。")
 
-# ---------------- 使用者目標 ----------------
+st.markdown(
+    f"""
+    <div class="note">
+      <b>目前採用的贈與稅規則（114年/2025 制）</b><br>
+      ・年免稅額：<span class="num">{fmt(EXEMPTION)}</span><br>
+      ・累進稅率（以「淨額＝贈與總額−免稅額」計）：
+        <ul style="margin:4px 0 0 20px;">
+          <li>淨額 ≤ <span class="num">{fmt(BR10_NET_MAX)}</span> ：<b>10%</b></li>
+          <li><span class="num">{fmt(BR10_NET_MAX+1)}</span> ～ <span class="num">{fmt(BR15_NET_MAX)}</span> ：<b>15%</b>（含 10% 基礎稅額）</li>
+          <li>> <span class="num">{fmt(BR15_NET_MAX)}</span> ：<b>20%</b>（含 10%＋15% 基礎稅額）</li>
+        </ul>
+      ・本工具以「第1年評價＝年繳×1/3、 第2年評價＝兩年保費總額×1/4（=年繳×0.5）」作保守近似，實務請以保險公司試算書之現金價值為準。
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# ---------------- 1) 使用者目標與偏好 ----------------
 st.subheader("一、輸入目標與偏好")
 target_yearly_prem = st.number_input("希望透過保單規劃的年繳總保費（元/年）",
                                      min_value=0, step=100_000, value=30_000_000, format="%d")
@@ -90,7 +100,7 @@ if target_yearly_prem == 0:
     st.info("請輸入年繳總保費目標。")
     st.stop()
 
-# ---------------- 系統建議張數與節奏 ----------------
+# ---------------- 2) 系統建議張數與節奏 ----------------
 unit_policy_prem = min(unit_policy_prem, MAX_POLICY_PREM)
 num_policies = max(1, math.ceil(target_yearly_prem / unit_policy_prem))
 actual_yearly_prem = num_policies * unit_policy_prem
@@ -105,10 +115,8 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-if unit_policy_prem >= MAX_POLICY_PREM and target_yearly_prem > MAX_POLICY_PREM:
-    st.warning("已套用單張上限 6,000,000 元；如需更高總額度，系統會自動增加張數。")
 
-# ---------------- 年度稅排程 ----------------
+# ---------------- 3) 年度贈與稅排程 ----------------
 st.subheader("二、年度贈與稅排程（單一贈與人）")
 plan_rows = []
 
@@ -118,12 +126,12 @@ plan_rows.append({"年度": "第1年", "贈與標的": "—（不變更）",
 
 # 第2年：變更（CV=年繳×0.5）
 gift_y2 = int(round(actual_yearly_prem * 0.5))
-net_y2  = max(0, gift_y2 - exemption)
-tax_y2, rate_y2 = gift_tax_by_bracket(net_y2, br10, br15)
+net_y2  = max(0, gift_y2 - EXEMPTION)
+tax_y2, rate_y2 = gift_tax_by_bracket(net_y2)
 plan_rows.append({"年度": "第2年", "贈與標的": "變更要保人（評價＝年繳×0.5）",
                   "贈與額": gift_y2, "免稅後淨額": net_y2, "應納贈與稅": tax_y2, "適用稅率": rate_y2})
 
-# 根據策略決定變更後再贈與幾年、以及 RPU 年
+# 變更後是否續贈現金（供新要保人繳保費），取決於策略
 strategy_to_extra_years = {
     "稅最省（第2年變更要保人）": 0,
     "保額優先（第2年變更＋多繳1年）": 1,
@@ -137,14 +145,13 @@ if enable_rpu:
 else:
     rpu_year = None
 
-# 變更後的現金贈與（供新要保人繳保費）直到 RPU 前一年；
-# 若不啟用 RPU，示意列出 2 年
+# 變更後的現金贈與（直到 RPU 前一年）；若不啟用 RPU，示意列出 2 年
 max_follow_years = extra_years if enable_rpu else 2
 for k in range(max_follow_years):
     year_num = 3 + k
     gift_cash = actual_yearly_prem
-    net = max(0, gift_cash - exemption)
-    tax, rate = gift_tax_by_bracket(net, br10, br15)
+    net = max(0, gift_cash - EXEMPTION)
+    tax, rate = gift_tax_by_bracket(net)
     plan_rows.append({"年度": f"第{year_num}年", "贈與標的": "現金贈與（供新要保人繳保費）",
                       "贈與額": gift_cash, "免稅後淨額": net, "應納贈與稅": tax, "適用稅率": rate})
 
@@ -154,8 +161,6 @@ if rpu_year is not None:
                       "贈與額": 0, "免稅後淨額": 0, "應納贈與稅": 0, "適用稅率": "—"})
 
 df_plan = pd.DataFrame(plan_rows)
-
-# 顯示（加上「元」字樣）
 show_df = df_plan.copy()
 for col in ["贈與額", "免稅後淨額", "應納贈與稅"]:
     show_df[col] = show_df[col].map(fmt_y)
@@ -169,11 +174,11 @@ st.divider()
 
 # ---------------- 10% 內之承作上限參考 ----------------
 st.subheader("三、在 10% 稅率內的承作上限（單一贈與人）")
-cap_gross_10   = exemption + br10        # 244萬 + 2,811萬 = 3,055萬
-cap_y2_yearly  = cap_gross_10 * 2        # 第2年變更：年繳上限 = 2×cap
-cap_y1_first   = cap_gross_10 * 3        # 第1年變更：首年年繳上限 = 3×cap
-st.write(f"- 若採第2年變更：每年可承作之年繳上限約 **{fmt_y(cap_y2_yearly)}**。")
-st.write(f"- 若採第1年變更：首年可承作之年繳上限約 **{fmt_y(cap_y1_first)}**。")
+cap_gross_10   = EXEMPTION + BR10_NET_MAX      # 244萬 + 2,811萬 = 3,055萬
+cap_y2_yearly  = cap_gross_10 * 2              # 第2年變更：年繳上限 = 2×cap
+cap_y1_first   = cap_gross_10 * 3              # 第1年變更：首年年繳上限 = 3×cap
+st.write(f"- 採第2年變更：每年可承作之年繳上限約 **{fmt_y(cap_y2_yearly)}**。")
+st.write(f"- 采第1年變更：首年可承作之年繳上限約 **{fmt_y(cap_y1_first)}**。")
 st.info("本頁以『第2年變更』為基準，通常總稅最低、金流最順。")
 
 st.divider()
