@@ -1,43 +1,29 @@
-# app.py — 保單贈與稅規劃器（單一贈與人｜可分批變更＋最終保額對照｜固定稅制｜全中文｜Y1=1/3、Y2=1/2）
-# 執行：streamlit run app.py
+# app.py — 單張保單｜實際數字精算贈與稅（變更要保人壓縮課稅）｜全中文
+# Run: streamlit run app.py
 
 import math
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="保單贈與稅規劃器｜單一贈與人", layout="centered")
+st.set_page_config(page_title="單張保單｜贈與稅試算（變更要保人）", layout="centered")
 
-# ---------------- 固定稅制常數（114年/2025 制） ----------------
+# ---------------- 固定稅制（114年/2025） ----------------
 EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
 BR10_NET_MAX = 28_110_000  # 10% 淨額上限
 BR15_NET_MAX = 56_210_000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
-# 單張年繳保費上限（且預設值）
-MAX_POLICY_PREM = 6_000_000
+MAX_ANNUAL_PREMIUM = 100_000_000  # 單年保費上限：1 億
 
-# ---------------- 共用樣式與格式 ----------------
 def fmt(n: float) -> str:
     return f"{n:,.0f}"
 
 def fmt_y(n: float) -> str:
     return f"{fmt(n)} 元"
 
-st.markdown("""
-<style>
-  .num { font-weight: 700; font-variant-numeric: tabular-nums; }
-  .bullet { margin: 0.2rem 0; }
-  .dataframe td:nth-child(3),
-  .dataframe td:nth-child(4),
-  .dataframe td:nth-child(5) { text-align:right; }
-  .note { background:#f7f7fb; border:1px solid #ececf3; padding:12px 14px; border-radius:8px; }
-</style>
-""", unsafe_allow_html=True)
-
 def gift_tax_by_bracket(net: int):
-    """依固定稅制計算贈與稅（含基稅）；回傳(稅額, 稅率字串)"""
-    if net <= 0:
-        return 0, "—"
+    """依固定稅制計算當年贈與稅（含基稅）；回傳(稅額, 最高適用稅率字串)"""
+    if net <= 0: return 0, "—"
     if net <= BR10_NET_MAX:
         return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
@@ -48,217 +34,171 @@ def gift_tax_by_bracket(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# ---------------- 標題與稅制說明 ----------------
-st.title("保單贈與稅規劃器（單一贈與人）")
-st.caption("所有金額單位：新台幣。若為夫妻兩位贈與人，可視情況將容量與結果 ×2。")
+# ---------------- 標題與說明 ----------------
+st.title("單張保單｜贈與稅試算（變更要保人壓縮課稅）")
+st.caption("所有金額單位：新台幣。贈與稅規則：年免稅 244 萬；10% 淨額上限 2,811 萬；15% 淨額上限 5,621 萬。")
 
-st.markdown(
-    f"""
-    <div class="note">
-      <b>本工具採用之贈與稅規則（114年/2025）</b><br>
-      ・年免稅額：<span class="num">{fmt(EXEMPTION)}</span><br>
-      ・累進稅率（以「淨額＝贈與總額−免稅額」計）：<br>
-        &nbsp;&nbsp;— 淨額 ≤ <span class="num">{fmt(BR10_NET_MAX)}</span> ：10%<br>
-        &nbsp;&nbsp;— {fmt(BR10_NET_MAX+1)} ～ {fmt(BR15_NET_MAX)} ：15%（含 10% 基礎稅額）<br>
-        &nbsp;&nbsp;— ＞ <span class="num">{fmt(BR15_NET_MAX)}</span> ：20%（含 10%＋15% 基礎稅額）<br>
-      ・要保人變更之贈與評價（保守近似，實務仍以保險公司試算書為準）：<br>
-        &nbsp;&nbsp;— 第1年：<b>現金價值＝累計保費 × 1/3</b><br>
-        &nbsp;&nbsp;— 第2年：<b>現金價值＝累計保費 × 1/2（= 年繳 × 1.0）</b><br>
-      ・現金價值通常逐年上升、趨近累計保費；不同公司/商品會有差異。
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# ---------------- 一、輸入目標與偏好 ----------------
-st.subheader("一、輸入目標與偏好")
-
-# 年期（用於不用保單之對照）
-policy_years = st.number_input("年期（年）", min_value=1, max_value=30, value=8, step=1)
-
-target_yearly_prem = st.number_input(
-    "希望透過保單規劃的年繳總保費（元/年）",
-    min_value=0, step=100_000, value=30_000_000, format="%d"
-)
-
-unit_policy_prem = st.number_input(
-    f"單張保單建議年繳（元/年，≤ {fmt(MAX_POLICY_PREM)})",
-    min_value=100_000, max_value=MAX_POLICY_PREM,
-    step=100_000, value=MAX_POLICY_PREM, format="%d"
-)
-
-# 變更節奏與 RPU
-opt_mode = st.selectbox(
-    "策略取向（影響 RPU 時點與是否需要續贈現金）",
-    ["稅最省（第2年變更為主）", "保額優先（第2年變更＋多繳1年）", "保額最大（第2年變更＋多繳2年）"]
-)
-enable_rpu = st.checkbox("啟用減額繳清（RPU）", value=True)
-rpu_mode = "自動建議"
-manual_year = None
-if enable_rpu:
-    rpu_mode = st.radio("RPU 年份選擇", ["自動建議", "手動指定"], horizontal=True)
-    if rpu_mode == "手動指定":
-        manual_year = st.select_slider("選擇 RPU 年（相對於變更在第2年）", options=[2, 3, 4], value=2)
-
-# 受益人最後拿到的保額（用試算書填入）
-st.subheader("（選填）受益人最後拿到的保額")
-benefit_full = st.number_input("不做 RPU、繼續繳滿的預計保額（元）", min_value=0, step=1_000_000, value=90_000_000, format="%d")
-col_b2, col_b3, col_b4 = st.columns(3)
-with col_b2:
-    benefit_rpu2 = st.number_input("第2年 RPU 預估保額（元）", min_value=0, step=1_000_000, value=0, format="%d")
-with col_b3:
-    benefit_rpu3 = st.number_input("第3年 RPU 預估保額（元）", min_value=0, step=1_000_000, value=0, format="%d")
-with col_b4:
-    benefit_rpu4 = st.number_input("第4年 RPU 預估保額（元）", min_value=0, step=1_000_000, value=0, format="%d")
-
-if target_yearly_prem == 0:
-    st.info("請輸入年繳總保費目標。")
-    st.stop()
-
-# ---------------- 二、系統建議張數與「分批變更」 ----------------
-unit_policy_prem = min(unit_policy_prem, MAX_POLICY_PREM)
-num_policies = max(1, math.ceil(target_yearly_prem / unit_policy_prem))
-actual_yearly_prem = num_policies * unit_policy_prem
-
-st.markdown(
-    f"""
-    <ul>
-      <li class="bullet">單張年繳上限 <span class="num">{fmt(MAX_POLICY_PREM)}</span>，你設定每張 <span class="num">{fmt(unit_policy_prem)}</span>。</li>
-      <li class="bullet">建議購買 <span class="num">{num_policies} 張</span>；實際年繳總保費：<span class="num">{fmt(actual_yearly_prem)}</span> / 年。</li>
-    </ul>
-    """,
-    unsafe_allow_html=True
-)
-
-# 第1年先變更幾張（0～全部）
-y1_change = st.slider("第1年先變更的張數（其餘在第2年變更）",
-                      min_value=0, max_value=num_policies, value=0, step=1)
-y2_change = num_policies - y1_change
-
-# RPU 年決策
-strategy_to_extra_years = {
-    "稅最省（第2年變更為主）": 0,
-    "保額優先（第2年變更＋多繳1年）": 1,
-    "保額最大（第2年變更＋多繳2年）": 2
-}
-extra_years = strategy_to_extra_years[opt_mode]
-if enable_rpu:
-    rpu_year = (2 + extra_years) if (rpu_mode == "自動建議") else manual_year
-else:
-    rpu_year = None
-
-# ---------------- 三、年度贈與稅排程（含分批變更） ----------------
-st.subheader("二、年度贈與稅排程（單一贈與人）")
-
-rows = []
-
-# 第1年：Y1 係數 = 累計×1/3 → 單張評價 = 年繳×1/3
-if y1_change == 0:
-    rows.append({"年度": "第1年", "贈與標的": "—（不變更）", "贈與額": 0,
-                 "免稅後淨額": 0, "應納贈與稅": 0, "適用稅率": "—"})
-else:
-    gift_y1 = int(round(y1_change * unit_policy_prem * (1/3)))
-    net_y1  = max(0, gift_y1 - EXEMPTION)
-    tax_y1, rate_y1 = gift_tax_by_bracket(net_y1)
-    rows.append({"年度": "第1年", "贈與標的": f"變更要保人（{y1_change} 張；評價＝年繳×1/3）",
-                 "贈與額": gift_y1, "免稅後淨額": net_y1, "應納贈與稅": tax_y1, "適用稅率": rate_y1})
-
-# 第2年：Y2 係數 = 累計×1/2 → 單張評價 = 年繳×1.0
-gift_y2_change = int(round(y2_change * unit_policy_prem * 1.0))
-gift_y2_cash   = 0  # 若第1年已變更的那批，RPU 晚於第2年，則需要贈與現金幫其繳第2年保費
-if y1_change > 0 and (not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 2)):
-    gift_y2_cash = y1_change * unit_policy_prem
-
-gift_y2_total = gift_y2_change + gift_y2_cash
-net_y2        = max(0, gift_y2_total - EXEMPTION)
-tax_y2, rate_y2 = gift_tax_by_bracket(net_y2)
-
-desc_y2 = f"變更要保人（{y2_change} 張；評價＝年繳×1.0）"
-if gift_y2_cash > 0:
-    desc_y2 += f" ＋ 現金贈與（為第1年已變更之 {y1_change} 張繳保費）"
-rows.append({"年度": "第2年", "贈與標的": desc_y2,
-             "贈與額": gift_y2_total, "免稅後淨額": net_y2,
-             "應納贈與稅": tax_y2, "適用稅率": rate_y2})
-
-# 第3年：若尚未 RPU，需為全部已變更保單贈與保費
-gift_y3_total = 0
-if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 3):
-    total_changed = y1_change + y2_change
-    gift_y3_total = total_changed * unit_policy_prem
-if gift_y3_total > 0:
-    net_y3  = max(0, gift_y3_total - EXEMPTION)
-    tax_y3, rate_y3 = gift_tax_by_bracket(net_y3)
-    rows.append({"年度": "第3年", "贈與標的": "現金贈與（為全部已變更之保單繳保費）",
-                 "贈與額": gift_y3_total, "免稅後淨額": net_y3,
-                 "應納贈與稅": tax_y3, "適用稅率": rate_y3})
-
-# 第4年（示意到第4年）
-gift_y4_total = 0
-if not enable_rpu or (enable_rpu and rpu_year is not None and rpu_year > 4):
-    total_changed = y1_change + y2_change
-    gift_y4_total = total_changed * unit_policy_prem
-if gift_y4_total > 0:
-    net_y4  = max(0, gift_y4_total - EXEMPTION)
-    tax_y4, rate_y4 = gift_tax_by_bracket(net_y4)
-    rows.append({"年度": "第4年", "贈與標的": "現金贈與（為全部已變更之保單繳保費）",
-                 "贈與額": gift_y4_total, "免稅後淨額": net_y4,
-                 "應納贈與稅": tax_y4, "適用稅率": rate_y4})
-
-# RPU 列（若有啟用）
-if enable_rpu and rpu_year is not None:
-    rows.append({"年度": f"第{rpu_year}年", "贈與標的": "減額繳清（RPU）",
-                 "贈與額": 0, "免稅後淨額": 0, "應納贈與稅": 0, "適用稅率": "—"})
-
-df = pd.DataFrame(rows)
-show = df.copy()
-for col in ["贈與額", "免稅後淨額", "應納贈與稅"]:
-    show[col] = show[col].map(fmt_y)
-st.dataframe(show, use_container_width=True)
-
-# ---------------- 四、合計與對照：法律移轉 vs 經濟價值 ----------------
-# 法律上已完成的贈與總額（= 當年度所有「贈與額」加總）
-legal_total_with_policy = int(df["贈與額"].sum())
-total_tax_with_policy   = int(df["應納贈與稅"].sum())
-
-# 經濟上最終價值：依是否 RPU/哪一年 RPU 帶入對應保額
-if enable_rpu and rpu_year is not None:
-    final_benefit = {2: benefit_rpu2, 3: benefit_rpu3, 4: benefit_rpu4}.get(rpu_year, 0)
-    final_benefit_note = f"RPU 年：第{rpu_year}年"
-else:
-    final_benefit = benefit_full
-    final_benefit_note = "不做 RPU／繼續繳滿"
-
-# 「完全不透過保單」對照（同年期、同年繳現金直接贈與）
-no_policy_annual_gift = actual_yearly_prem
-no_policy_annual_net  = max(0, no_policy_annual_gift - EXEMPTION)
-no_policy_annual_tax, _rate = gift_tax_by_bracket(no_policy_annual_net)
-legal_total_no_policy = int(no_policy_annual_gift * policy_years)
-total_tax_no_policy   = int(no_policy_annual_tax * policy_years)
-economic_no_policy    = legal_total_no_policy  # 經濟上就是拿到現金總額
-
-st.markdown("### 三、總結對照")
-st.markdown(
-    f"""
-- **不用保單（直接現金贈與）**  
-  ・法律上移轉金額合計：**{fmt_y(legal_total_no_policy)}**  
-  ・累計贈與稅：**{fmt_y(total_tax_no_policy)}**  
-  ・經濟上最終拿到：**{fmt_y(economic_no_policy)}**（現金分年入帳）
-
-- **透過保單（本頁設定）**  
-  ・法律上移轉金額合計（含變更＋續年現金贈與）：**{fmt_y(legal_total_with_policy)}**  
-  ・累計贈與稅：**{fmt_y(total_tax_with_policy)}**  
-  ・經濟上最終拿到（受益人）：**{fmt_y(final_benefit)}**（{final_benefit_note}）
+st.markdown("""
+**關係設定：** 原要保人＝第一代，變更後要保人＝第二代，受益人＝第三代。  
+**稅務邏輯：**
+- 變更要保人當年，**視為贈與＝當日現金價值（保單價值準備金/解約金）**。  
+- 變更後若仍由第一代「代繳保費」，則**每年的代繳保費**屬於當年度的**現金贈與**。  
+- 每年可用一次**免稅額 2,440,000 元**，其餘按 10%/15%/20% 計稅。
 """)
 
-st.info("提醒：最終保額/RPU 後保額須以保險公司試算書為準；本頁以第1年=×1/3、第2年=×1/2 為保守近似做壓縮評價。")
+# ---------------- 輸入：年期、變更年、代繳終止年 ----------------
+col1, col2, col3 = st.columns(3)
+with col1:
+    years = st.number_input("年期（年）", min_value=1, max_value=30, value=8, step=1)
+with col2:
+    change_year = st.number_input("第幾年『變更要保人為二代』", min_value=1, max_value=30, value=2, step=1)
+with col3:
+    still_fund = st.checkbox("變更後由一代代繳保費？", value=True)
 
-st.divider()
+fund_until_year = change_year - 1
+if still_fund:
+    fund_until_year = st.number_input("一代代繳『到第幾年』為止（含該年）", min_value=change_year, max_value=30, value=max(change_year, 8), step=1)
 
-# ---------------- 10% 內之承作上限參考（依新係數） ----------------
-st.subheader("四、在 10% 稅率內的承作上限（單一贈與人）")
-cap_gross_10   = EXEMPTION + BR10_NET_MAX      # 244萬 + 2,811萬
-cap_y2_yearly  = cap_gross_10 * 1              # 第2年變更：單張評價=年繳×1.0 ⇒ 年繳上限 = 免稅＋10%淨額上限
-cap_y1_first   = cap_gross_10 * 3              # 第1年變更：單張評價=年繳×1/3 ⇒ 年繳上限 = 3×cap
-st.write(f"- 若第2年變更：每位贈與人、每年可承作之年繳上限約 **{fmt_y(cap_y2_yearly)}**（維持 10% 級距）。")
-st.write(f"- 若第1年變更：首年可承作之年繳上限約 **{fmt_y(cap_y1_first)}**（維持 10% 級距）。")
-st.caption("以上僅就『變更當年』的評價額推算；若同年另有現金贈與（資助續繳），需併計當年淨額。")
+if change_year > years or (still_fund and fund_until_year > years):
+    st.warning("提示：變更年/代繳終止年不可超過年期。")
+    years = max(years, change_year, (fund_until_year if still_fund else years))
+
+# ---------------- 逐年輸入：保費與現金價值 ----------------
+st.subheader("逐年輸入：年繳保費 & 年末現金價值（保單價值準備金/解約金）")
+
+# 預設：保費 6,000,000；現金價值：第1年=當年保費×1/3，第2年=累計×1/2，之後粗略遞增（可覆寫）
+rows = []
+cum = 0
+for y in range(1, years + 1):
+    prem = 6_000_000
+    cum += prem
+    if y == 1:
+        cv = int(round(prem * (1/3)))
+    elif y == 2:
+        cv = int(round(cum * (1/2)))
+    else:
+        # 粗略示意：第3年起逐年向累計保費靠攏（0.7, 0.8, 0.9, 0.95...）
+        ratio = 0.7 + min(0.25, 0.1 * (y-3))  # 0.7, 0.8, 0.9, 1.0(封頂0.95)
+        ratio = min(ratio, 0.95)
+        cv = int(round(cum * ratio))
+    rows.append({"年度": y, "年繳保費（元）": prem, "年末現金價值（元）": cv})
+
+df_input = pd.DataFrame(rows)
+edited = st.data_editor(
+    df_input,
+    use_container_width=True,
+    num_rows="dynamic",
+    column_config={
+        "年度": st.column_config.NumberColumn(format="%d", disabled=True),
+        "年繳保費（元）": st.column_config.NumberColumn(format="%d", min_value=0, max_value=MAX_ANNUAL_PREMIUM, step=100_000),
+        "年末現金價值（元）": st.column_config.NumberColumn(format="%d", min_value=0, step=100_000),
+    },
+    key="input_editor"
+)
+
+# 校驗：單年保費不可超過 1 億
+if (edited["年繳保費（元）"] > MAX_ANNUAL_PREMIUM).any():
+    st.error("有年度的保費超過 1 億上限，請調整後再計算。")
+    st.stop()
+
+# ---------------- 計算：逐年贈與額、淨額與稅 ----------------
+st.subheader("計算結果｜逐年贈與稅")
+calc_rows = []
+legal_gift_total = 0
+tax_total = 0
+
+for _, r in edited.iterrows():
+    y = int(r["年度"])
+    prem = int(r["年繳保費（元）"])
+    cv = int(r["年末現金價值（元）"])
+
+    gift = 0
+    note = "—"
+    # 變更年：視為贈與 = 現金價值
+    if y == change_year:
+        gift += cv
+        note = "變更要保人→以當年現金價值視為贈與"
+    # 變更後、且一代仍代繳之年度：當年保費視為現金贈與
+    if still_fund and (y >= change_year) and (y <= fund_until_year):
+        gift += prem
+        note = "變更後由一代代繳保費→當年現金贈與" if y != change_year else "變更＋代繳保費皆計入"
+
+    net = max(0, gift - EXEMPTION)
+    tax, rate = gift_tax_by_bracket(net)
+
+    legal_gift_total += gift
+    tax_total += tax
+
+    calc_rows.append({
+        "年度": y,
+        "當年視為贈與（元）": gift,
+        "免稅後淨額（元）": net,
+        "應納贈與稅（元）": tax,
+        "適用稅率": rate,
+        "說明": note
+    })
+
+df_calc = pd.DataFrame(calc_rows)
+
+show = df_calc.copy()
+for col in ["當年視為贈與（元）", "免稅後淨額（元）", "應納贈與稅（元）"]:
+    show[col] = show[col].map(fmt_y)
+
+st.dataframe(show, use_container_width=True)
+
+st.markdown(
+    f"""
+**合計（透過保單）**  
+- 法律上已完成之贈與總額：**{fmt_y(legal_gift_total)}**  
+- 累計贈與稅：**{fmt_y(tax_total)}**
+"""
+)
+
+# ---------------- 對照：不用保單（直接現金贈與） ----------------
+st.subheader("對照｜不用保單（直接現金贈與）")
+# 以「實際由一代支付的年數與金額」做公平對照：= 變更後仍代繳到 fund_until_year 的那段保費 + 變更前的保費也可納入對照（若你想比總現金流）
+# 這裡提供兩個口徑：A 只比「變更後代繳段」、B 比「全期保費」
+prem_series = edited["年繳保費（元）"].astype(int).tolist()
+
+# A：僅將「實際代繳期間（變更後至 fund_until_year）」視為對照現金贈與
+no_policy_stream_A = [
+    (i+1, p) for i, p in enumerate(prem_series)
+    if (i+1) >= change_year and (not still_fund or (i+1) <= fund_until_year)
+]
+
+# B：整張保單之保費（若想比較「完全不用保單、純現金逐年贈與」的總稅）
+no_policy_stream_B = [(i+1, p) for i, p in enumerate(prem_series)]
+
+def sum_tax_on_stream(stream):
+    total = 0
+    for y, amt in stream:
+        net = max(0, amt - EXEMPTION)
+        tax, _ = gift_tax_by_bracket(net)
+        total += tax
+    return total, sum(amt for _, amt in stream)
+
+tax_A, sum_A = sum_tax_on_stream(no_policy_stream_A)
+tax_B, sum_B = sum_tax_on_stream(no_policy_stream_B)
+
+st.markdown(
+    f"""
+- **口徑 A（只比變更後代繳的那段現金流）**：  
+  ・現金贈與總額：**{fmt_y(sum_A)}**；累計贈與稅：**{fmt_y(tax_A)}**
+
+- **口徑 B（全期保費都改成現金贈與）**：  
+  ・現金贈與總額：**{fmt_y(sum_B)}**；累計贈與稅：**{fmt_y(tax_B)}**
+"""
+)
+
+# ---------------- 客戶易懂的邏輯（話術） ----------------
+st.subheader("給客戶的一分鐘說明（可直接念）")
+st.markdown(f"""
+- 這張保單目前要保人是一代、被保人是二代、受益人是三代。  
+- 我們在「第 {change_year} 年」把**要保人變更給二代**，當天的**現金價值**就被視為**當年的贈與金額**。  
+- 如果變更後還是由一代代繳保費（到第 {fund_until_year if still_fund else change_year-1} 年），那些年度的保費也算是**當年的現金贈與**。  
+- 每年有**免稅額 244 萬**，超過的部分按 **10%/15%/20%** 計稅；上表已用你提供的「保費與現金價值**真實數字**」逐年把稅算出來。  
+- 意義：把「前幾年的投入」在變更當年**用現金價值**來認列（通常**低於累計保費**），可以**壓低課稅基礎**；  
+  之後是否繼續代繳、繳到哪一年，我們就用「現金贈與」去安排每年的稅，**彈性掌握在你手上**。  
+""")
+
+st.caption("提醒：現金價值/繳清保額請以保險公司之試算書為準；本工具只做稅務計算與策略排程。")
