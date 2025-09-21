@@ -24,7 +24,7 @@ for k, v in DEFAULTS.items():
 # 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8 年維持 95%
 RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 
-# ---------------- 低調高雅的樣式 ----------------
+# ---------------- 低調高雅的樣式（含寬版容器） ----------------
 st.markdown(
     '''
 <style>
@@ -37,12 +37,13 @@ st.markdown(
   --emerald:#059669;     /* 穩健綠（提示） */
 }
 
+/* 放寬主容器寬度並留白 */
+.block-container { max-width: 1320px; padding-top: 1rem; padding-bottom: 2rem; }
+
 html, body, [class*="css"]  { color: var(--ink); }
 h1, h2, h3 { color: var(--ink) !important; letter-spacing: .3px; }
 
-hr.custom {
-  border:none; border-top:1px solid var(--line); margin: 12px 0 6px 0;
-}
+hr.custom { border:none; border-top:1px solid var(--line); margin: 12px 0 6px 0; }
 
 .small { color: var(--sub); font-size:0.95rem; line-height:1.6; }
 
@@ -101,6 +102,7 @@ def gift_tax(net: int):
         extra = (net - BR10_NET_MAX) * RATE_15
         return int(round(base + extra)), "15%"
     base = BR10_NET_MAX * RATE_10 + (BR15_NET_MAX - BR10_NET_MAX) * RATE_15
+        # 以上為 10%/15% 基稅
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
@@ -108,12 +110,13 @@ def gift_tax(net: int):
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
-with st.expander("計算邏輯（供參）", expanded=False):
+# 規劃摘要（預設展開，顯示您提供的四行文字）
+with st.expander("規劃摘要", expanded=True):
     st.markdown(
         f'''
 - 規劃設定：要保人第一代 → 變更為第二代；被保人第二代；受益人第三代。  
-- **保單規劃**：於變更要保人年度，以當時**保單價值準備金**認列贈與。  
-- **現金贈與**：以現金達成同額移轉，逐年課稅。  
+- 保單規劃：於變更要保人年度，以當時**保單價值準備金**認列贈與。  
+- 現金贈與：以現金達成同額移轉，逐年課稅。  
 - 本試算僅比較**變更當年之前**之稅負差；變更後不再由第一代繳費。
 '''
     )
@@ -191,7 +194,7 @@ st.markdown(
     f'''
 <div class="section small">
 <span class="tag">保單規劃</span>
-於第 <b>{change_year}</b> 年完成要保人變更，當年度以 <b>現金價值</b> 認列贈與（通常低於累計投入）。<br>
+於第 <b>{change_year}</b> 年完成要保人變更，當年度以 <b>保單價值準備金</b> 認列贈與（通常低於累計投入）。<br>
 <span class="tag">現金贈與</span>
 需於第 <b>1～{change_year}</b> 年逐年以 <b>現金贈與</b> 達成移轉，各年分別課稅。
 </div>
@@ -204,7 +207,7 @@ st.markdown('<hr class="custom">', unsafe_allow_html=True)
 colA, colB, colC = st.columns(3)
 with colA:
     st.markdown("**保單規劃（第 {} 年變更）**".format(change_year))
-    card("變更當年視為贈與（現金價值）", fmt_y(gift_with_policy))
+    card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy))
     card("當年度應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
 with colB:
     st.markdown("**現金贈與（第 1～{} 年）**".format(change_year))
@@ -214,7 +217,7 @@ with colC:
     card("至第 {} 年節省之贈與稅".format(change_year), fmt_y(tax_saving))
 
 # ---------------- 明細（預設收合，供專家檢視） ----------------
-st.write("")  # 空行：讓上方區塊與 expander 之間更呼吸
+st.write("")  # 空行
 with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False):
     st.markdown("**年度現金價值（依預設比率推估）**")
     st.dataframe(
@@ -242,7 +245,7 @@ st.subheader("規劃效果")
 st.markdown(
     f'''
 **① 現金流不變，家族保障更具規模**  
-- 現金贈與：每投入 **1 元**僅能**等值移轉 1 元**，無保障槓桿，且給付時點與資金到位**不具確定性**（需視資產流動性與市場狀況）。  
+- 現金贈與：每投入 **1 元**僅能**等值移轉 1 元**，缺乏保障槓桿，且給付時點與資金到位**不具確定性**（需視資產流動性與市場狀況）。  
 - 保單規劃：每投入 **1 元**可在約定事件或時點**轉化為超過 1 元的保額**（依商品試算與核保而定），形成**保障槓桿**；並可**指定受益人**，達到**定向傳承**。  
 
 **② 資金到位的確定性**  
@@ -253,7 +256,7 @@ st.markdown(
 - 透過**保單贈與（含變更要保人）**可維持**帳戶獨立**並降低與銀行往來帳戶的混同風險；亦有助於**婚姻財富治理**，明確標示用途（如教育金、長照金）。  
 
 **④ 稅務效率**  
-- 保單規劃：僅於第 {change_year} 年就「**現金價值**」計算贈與稅（多數情況低於累計投入），稅負效率通常更佳。  
+- 保單規劃：僅於第 {change_year} 年就「**保單價值準備金**」計贈與稅（多數情況低於累計投入），稅負效率通常更佳。  
 - 現金贈與：需於第 1～{change_year} 年逐年就現金贈與課稅；上方指標已呈現兩者差異。
 '''
 )
