@@ -16,12 +16,12 @@ RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
-DEFAULTS = {"years": 8, "annual_cash": 10_000_000, "change_year": 2}  # 預設改為 1,000 萬
+DEFAULTS = {"years": 8, "annual_cash": 10_000_000, "change_year": 2}  # 預設 1,000 萬
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8 年維持 95%
+# 預設比率（示意）：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8 年維持 95%
 RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 
 # ---------------- 低調高雅的樣式 ----------------
@@ -36,39 +36,26 @@ st.markdown(
   --gold:#C8A96A;        /* 香檳金重點色 */
   --emerald:#059669;     /* 穩健綠（提示） */
 }
-
 html, body, [class*="css"]  { color: var(--ink); }
 h1, h2, h3 { color: var(--ink) !important; letter-spacing: .3px; }
-
-hr.custom {
-  border:none; border-top:1px solid var(--line); margin: 12px 0 6px 0;
-}
-
+hr.custom { border:none; border-top:1px solid var(--line); margin: 12px 0 6px 0; }
 .small { color: var(--sub); font-size:0.95rem; line-height:1.6; }
-
 .kpi {
   border:1px solid var(--line);
   border-left:5px solid var(--gold);
   border-radius:12px;
   padding:14px 16px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(10,22,70,.04);
+  background:#fff;
+  box-shadow:0 1px 2px rgba(10,22,70,.04);
 }
-.kpi .label { color: var(--sub); font-size:0.95rem; margin-bottom:6px; }
-.kpi .value { font-weight:700; font-variant-numeric: tabular-nums; font-size:1.05rem; line-height:1.3; }
-.kpi .note  { color: var(--emerald); font-size:0.9rem; margin-top:4px; }
-
+.kpi .label { color:var(--sub); font-size:0.95rem; margin-bottom:6px; }
+.kpi .value { font-weight:700; font-variant-numeric:tabular-nums; font-size:1.05rem; line-height:1.3; }
+.kpi .note { color:var(--emerald); font-size:0.9rem; margin-top:4px; }
 .tag {
   display:inline-block; padding:2px 8px; border:1px solid var(--line);
-  border-radius:999px; font-size:0.82rem; color:var(--sub); background:#fff;
-  margin-right:8px;
+  border-radius:999px; font-size:0.82rem; color:var(--sub); background:#fff; margin-right:8px;
 }
-.section {
-  background: var(--bg);
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:16px;
-}
+.section { background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; }
 </style>
 ''',
     unsafe_allow_html=True
@@ -104,16 +91,32 @@ def gift_tax(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# ---------------- 標題與導言 ----------------
+# ---------------- 標題、稅制、決策摘要 ----------------
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
+
+# 先讀取目前變更年份（供摘要動態帶入）
+change_preview = st.session_state["change_year"]
+
+st.markdown(
+    f"""
+<div class="small">
+<b>決策摘要：</b><br>
+• 同額現金流，於第 <b>{change_preview}</b> 年以<b>現金價值</b>認列贈與，通常低於累計投入，<b>稅務更有效率</b>。<br>
+• <b>保單規劃</b>可在需要時把 <b>1 元保費 → ＞1 元保額</b>（依試算/核保），並可<b>指定受益人</b>，定向傳承。<br>
+• <b>現金贈與</b>需自第 <b>1～{change_preview}</b> 年逐年課稅；下方指標已呈現差異。
+</div>
+""",
+    unsafe_allow_html=True
+)
+st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
 with st.expander("計算邏輯（供參）", expanded=False):
     st.markdown(
         f'''
-- 規劃設定：要保人第一代 →（第 **{st.session_state["change_year"]} 年**變更）→ 第二代；被保人第二代；受益人第三代。  
-- **保單規劃**：於第 **{st.session_state["change_year"]} 年**變更要保人，以當時**現金價值（保價金/解約金）**認列贈與。  
-- **現金贈與**：以現金達成同額移轉，需在第 **1～{st.session_state["change_year"]} 年**逐年課稅。  
+- 規劃設定：要保人第一代 →（第 **{change_preview} 年**變更）→ 第二代；被保人第二代；受益人第三代。  
+- **保單規劃**：於第 **{change_preview} 年**變更要保人，以當時**現金價值（保價金/解約金）**認列贈與。  
+- **現金贈與**：以現金達成同額移轉，需在第 **1～{change_preview} 年**逐年課稅。  
 - 本試算僅比較**變更當年之前**之稅負差；變更後不再由第一代繳費。
 '''
     )
@@ -191,9 +194,9 @@ st.markdown(
     f'''
 <div class="section small">
 <span class="tag">保單規劃</span>
-於第 <b>{change_year}</b> 年完成要保人變更，當年度以 <b>現金價值</b> 認列贈與（通常低於累計投入）。<br>
+第 <b>{change_year}</b> 年變更要保人，當年度以 <b>現金價值</b> 認列贈與（通常低於累計投入）。<br>
 <span class="tag">現金贈與</span>
-需於第 <b>1～{change_year}</b> 年逐年以 <b>現金贈與</b> 達成移轉，各年分別課稅。
+需自第 <b>1～{change_year}</b> 年逐年移轉，各年分別課稅。
 </div>
 ''',
     unsafe_allow_html=True
@@ -211,10 +214,11 @@ with colB:
     card("累計贈與稅（至第 {} 年）".format(change_year), fmt_y(total_tax_no_policy))
 with colC:
     st.markdown("**稅負差異**")
-    card("至第 {} 年節省之贈與稅".format(change_year), fmt_y(tax_saving))
+    card("至第 {} 年節省之贈與稅".format(change_year), fmt_y(tax_saving),
+         note="同額現金流條件下的差異，未含商品紅利/保額等效應")
 
-st.write("")   # ← 空行
-# ---------------- 明細（預設收合，供專家檢視） ----------------
+# ---------------- 空行（你指定的）＋ 明細（預設收合） ----------------
+st.write("")  # 空行
 with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False):
     st.markdown("**年度現金價值（依預設比率推估）**")
     st.dataframe(
@@ -227,7 +231,6 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
         ),
         use_container_width=True,
     )
-
     st.markdown("**現金贈與：逐年稅額**")
     df_no = pd.DataFrame(yearly_tax_list)
     show_no = df_no.copy()
@@ -237,25 +240,36 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
-# ---------------- 規劃效果（以客戶視角撰寫） ----------------
+# ---------------- 名詞小辭典（一句話看懂） ----------------
+with st.expander("名詞小辭典（一句話看懂）", expanded=False):
+    st.markdown(
+        """
+- **現金價值**：保單年末可解約領回的金額（示意比率已於上文表格說明）。  
+- **定向傳承**：可事先指定受益人與比例，資金直達指定對象。  
+- **帳戶獨立**：與一般銀行往來分開，降低資金混同與糾紛風險。  
+- **流動性防火牆**：避免在不利時點賣資產，必要時仍有現金可用。  
+        """
+    )
+
+# ---------------- 規劃效果（已白話 10%，維持專業口吻） ----------------
 st.subheader("規劃效果")
 st.markdown(
-    f'''
-**① 現金流不變，家族保障更具規模**  
-- 現金贈與：每投入 **1 元**僅能**等值移轉 1 元**，缺乏保障槓桿，且給付時點與資金到位**不具確定性**（需視資產流動性與市場狀況）。  
-- 保單規劃：每投入 **1 元**可在約定事件或時點**轉化為超過 1 元的保額**（依商品試算與核保而定），形成**保障槓桿**；並可**指定受益人**，達到**定向傳承**。  
+    f"""
+**① 同額現金，效益更大**  
+- <b>現金贈與：</b>每投入 1 元僅等值移轉 1 元，缺乏保障槓桿；給付時點與資金到位受市場/流動性影響。  
+- <b>保單規劃：</b>每 1 元保費可在約定事件/時點轉化為<b>超過 1 元的保額</b>（依試算與核保），並可<b>指定受益人</b>，達到<b>定向傳承</b>。
 
-**② 資金到位的確定性**  
-- 保險給付不受市場波動與資產流動性影響，可避免於壓力時點折價出售股權或不動產，形同建立**流動性防火牆**。  
+**② 關鍵時間點，現金確定到位**  
+- 保險給付不受市場波動影響；必要時點現金即時到位，降低在壓力情境下折價處分資產的機率。  
 
-**③ 治理與控管**  
-- 以您設定的交棒節點（第 {change_year} 年）變更要保人，受益人與比例得事前規劃；可搭配保險信託以分期撥付、抑制外界干擾。  
-- 透過**保單贈與（含變更要保人）**可維持**帳戶獨立**並降低與銀行往來帳戶的混同風險；亦有助於**婚姻財富治理**，明確標示用途（如教育金、長照金）。  
+**③ 秩序與治理**  
+- 於第 <b>{change_year}</b> 年完成要保人變更，交棒節奏明確；受益人與比例可事前設計（必要時搭配保險信託）以分層/分期撥付。  
+- 透過<b>帳戶獨立</b>與用途標示，降低與一般銀行往來帳戶的混同風險；亦有助於婚姻財富治理。  
 
 **④ 稅務效率**  
-- 保單規劃：僅於第 {change_year} 年就「**現金價值**」計贈與稅（多數情況低於累計投入），稅負效率通常更佳。  
-- 現金贈與：需於第 1～{change_year} 年逐年就現金贈與課稅；上方指標已呈現兩者差異。
-'''
+- <b>保單規劃：</b>僅就第 <b>{change_year}</b> 年的<b>現金價值</b>計贈與稅，多數情況較逐年現金贈與更有效率。  
+- <b>現金贈與：</b>第 1～{change_year} 年逐年課稅；差異如上方指標所示。
+"""
 )
 
 st.caption("註：年末現金價值與最終保額仍以保險公司試算書為準；本工具著重稅務邏輯與資金路徑之展示。")
