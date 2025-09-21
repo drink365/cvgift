@@ -213,7 +213,7 @@ with colC:
     st.markdown("**稅負差異**")
     card("至第 {} 年節省之贈與稅".format(change_year), fmt_y(tax_saving))
 
-
+st.write("")   # ← 空行
 # ---------------- 明細（預設收合，供專家檢視） ----------------
 with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False):
     st.markdown("**年度現金價值（依預設比率推估）**")
