@@ -1,21 +1,21 @@
-# app.py — 單張保單｜第 N 年變更要保人（無 RPU）｜實際數字稅試算＋優勢呈現
-# 需求：pip install streamlit pandas
+# app.py — 用同樣現金流，放大保障＋更聰明贈與｜單張保單一鍵試算
 # 執行：streamlit run app.py
+# 需求：pip install streamlit pandas
 
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="單張保單｜變更要保人稅試算（無 RPU）", layout="centered")
+st.set_page_config(page_title="用同樣現金流，放大保障＋更聰明贈與｜單張保單一鍵試算", layout="centered")
 
 # ---------------- 稅制常數（114年/2025） ----------------
 EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
-BR10_NET_MAX = 28_110_000  # 10% 淨額上限
-BR15_NET_MAX = 56_210_000  # 15% 淨額上限
+BR10_NET_MAX = 28_110_000  # 10% 淨額上限（淨額）
+BR15_NET_MAX = 56_210_000  # 15% 淨額上限（淨額）
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL_PREM = 100_000_000  # 單年保費上限：1 億
 
-# ---------------- 共用樣式與工具 ----------------
+# ---------------- 共用樣式與小工具 ----------------
 st.markdown("""
 <style>
 .kpi {border:1px solid #ECECF3; border-radius:10px; padding:12px 14px; background:#FAFAFD;}
@@ -53,20 +53,20 @@ def gift_tax(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# ---------------- 標題與簡介 ----------------
-st.title("單張保單｜變更要保人壓縮課稅（無 RPU）")
-st.caption("金額單位：新台幣。稅制：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
+# ---------------- 行銷標題與簡介 ----------------
+st.title("用同樣現金流，放大保障＋更聰明贈與｜單張保單一鍵試算")
+st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
 with st.expander("計算邏輯（點我展開）", expanded=False):
     st.markdown("""
-- 關係：**要保人**一代 →（第 N 年變更）→ 二代；**被保人**二代；**受益人**三代。  
+- 家族設定：要保人一代 →（第 N 年變更）→ 二代；被保人二代；受益人三代。  
 - **用保單**：第 N 年把要保人改為二代，當年**視現金價值（保價金/解約金）為贈與額**。  
-- **不用保單**：若不用保單、但要達到同等移轉，則為**第 1～N 年，每年贈與「年繳保費」**。  
-- 每年可用**免稅 2,440,000 元**，超過部分按 **10% / 15% / 20%** 計稅。  
+- **不用保單**：若不用保單、要達到相同移轉，則為**第 1～N 年，每年贈與「年繳保費」**。  
+- 每年可用**免稅 2,440,000 元**；超過部分依 **10% / 15% / 20%** 計稅。  
 - 本頁只比較**到變更當年**；變更後不再由一代繳保費（不再產生一代→二代的贈與）。
 """)
 
-# ---------------- 1) 使用者輸入 ----------------
+# ---------------- 1) 使用者輸入（僅三欄） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
     years = st.number_input("年期（年）", min_value=1, max_value=40, value=8, step=1)
@@ -77,14 +77,21 @@ with col3:
     change_year = st.number_input("變更要保人年份（N）", min_value=1, max_value=40,
                                   value=2, step=1)
 
+# （選填）試算書保額 → 顯示保障倍數
+benefit_sum_assured = st.number_input(
+    "（選填）試算書保額／身故給付（元）",
+    min_value=0, step=1_000_000, value=0, format="%d",
+    help="輸入商品試算書上的保額，系統會顯示『保障倍數＝保額 ÷ 到第 N 年累計保費』"
+)
+
 if annual_prem > MAX_ANNUAL_PREM:
-    st.error("年繳保費不可超過 1 億。")
-    st.stop()
+    st.error("年繳保費不可超過 1 億。"); st.stop()
 if change_year > years:
     st.warning("變更年份不可超過年期，已自動調整為年期。")
     change_year = years
 
 # ---------------- 2) 自動生成「年末現金價值」表 ----------------
+# 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8年維持 95%
 ratio_map = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 rows, cum = [], 0
 for y in range(1, years+1):
@@ -97,7 +104,7 @@ for y in range(1, years+1):
                  "年末現金價值（元）": cv})
 df_years = pd.DataFrame(rows)
 
-st.subheader("年度明細（依預設比率自動生成，可直接作為客戶說明）")
+st.subheader("年度明細（依預設比率自動生成）")
 st.dataframe(
     df_years.assign(
         **{"年繳保費（元）": lambda d: d["年繳保費（元）"].map(fmt),
@@ -152,6 +159,19 @@ with st.expander("展開看『不用保單』逐年稅額", expanded=False):
         show_no[c] = show_no[c].map(fmt_y)
     st.dataframe(show_no, use_container_width=True)
 
+# 保障倍數 KPI（若有輸入保額）
+cum_prem_to_N = annual_prem * change_year
+if benefit_sum_assured and cum_prem_to_N > 0:
+    st.markdown("**保障倍數（價值感一眼看懂）**")
+    colx1, colx2 = st.columns(2)
+    with colx1:
+        kpi("到第 N 年累計保費", fmt_y(cum_prem_to_N))
+    with colx2:
+        kpi("保障倍數（保額 ÷ 累計保費）",
+            f"{benefit_sum_assured / cum_prem_to_N:,.2f} ×",
+            note=f"以保額 {fmt_y(benefit_sum_assured)} 計算")
+    st.caption("同樣投入到第 N 年的現金流，風險時刻可放大為保額；倍數越高，資本效率越好。")
+
 st.divider()
 
 # ---------------- 4) 一頁就懂：保單核心價值（不只省稅） ----------------
@@ -175,4 +195,4 @@ st.markdown(f"""
 - 上方 KPI 也呈現：到第 N 年的**稅負差（節稅金額）**。
 """)
 
-st.caption("提醒：年末現金價值與最終保額以保險公司試算書為準；本工具著重稅務計算與策略展示。")
+st.caption("提示：年末現金價值與最終保額以保險公司試算書為準；本工具著重稅務計算與策略展示。")
