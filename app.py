@@ -13,9 +13,9 @@ BR10_NET_MAX = 28_110_000  # 10% 淨額上限（淨額）
 BR15_NET_MAX = 56_210_000  # 15% 淨額上限（淨額）
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
-MAX_ANNUAL_PREM = 100_000_000  # 單年保費上限：1 億
+MAX_ANNUAL_PREM = 100_000_000  # 單年現金支出上限：1 億
 
-# ---------------- 共用樣式與小工具 ----------------
+# ---------------- 版面樣式與「指標小卡」工具 ----------------
 st.markdown("""
 <style>
 .kpi {border:1px solid #ECECF3; border-radius:10px; padding:12px 14px; background:#FAFAFD;}
@@ -25,7 +25,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def kpi(label: str, value: str, note: str = ""):
+def card(label: str, value: str, note: str = ""):
     html = f'<div class="kpi"><div class="label">{label}</div>' \
            f'<div class="value">{value}</div>'
     if note:
@@ -61,7 +61,8 @@ with st.expander("計算邏輯（點我展開）", expanded=False):
     st.markdown("""
 - 家族設定：要保人一代 →（第 N 年變更）→ 二代；被保人二代；受益人三代。  
 - **用保單**：第 N 年把要保人改為二代，當年**視現金價值（保價金/解約金）為贈與額**。  
-- **不用保單**：若不用保單、要達到相同移轉，則為**第 1～N 年，每年贈與「年繳保費」**。  
+- **不用保單（對照）**：若選擇不用保單、但希望在第 N 年前達到**相同規模的資金移轉**，本工具以  
+  **「第 1～N 年，每年贈與等額現金」**作為對照（每年金額＝上方輸入的年度現金支出）。  
 - 每年可用**免稅 2,440,000 元**；超過部分依 **10% / 15% / 20%** 計稅。  
 - 本頁只比較**到變更當年**；變更後不再由一代繳保費（不再產生一代→二代的贈與）。
 """)
@@ -71,21 +72,22 @@ col1, col2, col3 = st.columns(3)
 with col1:
     years = st.number_input("年期（年）", min_value=1, max_value=40, value=8, step=1)
 with col2:
-    annual_prem = st.number_input("年繳保費（元）", min_value=0, max_value=MAX_ANNUAL_PREM,
-                                  value=6_000_000, step=100_000, format="%d")
+    annual_prem = st.number_input("年度現金支出（元）", min_value=0, max_value=MAX_ANNUAL_PREM,
+                                  value=6_000_000, step=100_000, format="%d",
+                                  help="若用保單則為年繳保費；不用保單則視為每年等額現金贈與")
 with col3:
     change_year = st.number_input("變更要保人年份（N）", min_value=1, max_value=40,
                                   value=2, step=1)
 
-# （選填）試算書保額 → 顯示保障倍數
+# （選填）試算書保額 → 顯示保障倍數（預設 9,000 萬）
 benefit_sum_assured = st.number_input(
     "（選填）試算書保額／身故給付（元）",
-    min_value=0, step=1_000_000, value=0, format="%d",
-    help="輸入商品試算書上的保額，系統會顯示『保障倍數＝保額 ÷ 到第 N 年累計保費』"
+    min_value=0, step=1_000_000, value=90_000_000, format="%d",
+    help="輸入商品試算書上的保額，系統會顯示『保障倍數＝保額 ÷ 到第 N 年累計投入』"
 )
 
 if annual_prem > MAX_ANNUAL_PREM:
-    st.error("年繳保費不可超過 1 億。"); st.stop()
+    st.error("年度現金支出不可超過 1 億。"); st.stop()
 if change_year > years:
     st.warning("變更年份不可超過年期，已自動調整為年期。")
     change_year = years
@@ -99,16 +101,16 @@ for y in range(1, years+1):
     ratio = ratio_map.get(y, 0.95)
     cv = int(round(cum * ratio))
     rows.append({"年度": y,
-                 "年繳保費（元）": annual_prem,
-                 "累計保費（元）": cum,
+                 "年度現金支出（元）": annual_prem,
+                 "累計投入（元）": cum,
                  "年末現金價值（元）": cv})
 df_years = pd.DataFrame(rows)
 
 st.subheader("年度明細（依預設比率自動生成）")
 st.dataframe(
     df_years.assign(
-        **{"年繳保費（元）": lambda d: d["年繳保費（元）"].map(fmt),
-           "累計保費（元）": lambda d: d["累計保費（元）"].map(fmt),
+        **{"年度現金支出（元）": lambda d: d["年度現金支出（元）"].map(fmt),
+           "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
            "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt)}
     ),
     use_container_width=True
@@ -122,7 +124,7 @@ gift_with_policy = cv_at_change
 net_with_policy = max(0, gift_with_policy - EXEMPTION)
 tax_with_policy, rate_with = gift_tax(net_with_policy)
 
-# 不用保單：第 1～N 年每年贈與 = 年繳保費
+# 不用保單（對照）：第 1～N 年每年贈與「等額現金」（金額＝年度現金支出）
 total_tax_no_policy = 0
 yearly_tax_list = []
 for y in range(1, change_year+1):
@@ -131,7 +133,7 @@ for y in range(1, change_year+1):
     total_tax_no_policy += t
     yearly_tax_list.append({
         "年度": y,
-        "現金贈與（元）": annual_prem,
+        "等額現金贈與（元）": annual_prem,
         "免稅後淨額（元）": net,
         "應納贈與稅（元）": t,
         "適用稅率": rate
@@ -139,37 +141,37 @@ for y in range(1, change_year+1):
 
 tax_saving = total_tax_no_policy - tax_with_policy
 
-st.subheader("到變更當年（N）為止的稅務對照")
+st.subheader("到變更當年（N）為止的稅務對照（指標小卡）")
 colA, colB, colC = st.columns(3)
 with colA:
     st.markdown("**用保單（第 N 年變更）**")
-    kpi("變更當年視為贈與（現金價值）", fmt_y(gift_with_policy))
-    kpi("當年應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
+    card("變更當年視為贈與（現金價值）", fmt_y(gift_with_policy))
+    card("當年應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
 with colB:
-    st.markdown("**不用保單（第 1～N 年現金贈與）**")
-    kpi("合計贈與稅（1～N 年）", fmt_y(total_tax_no_policy))
+    st.markdown("**不用保單（第 1～N 年等額現金贈與）**")
+    card("合計贈與稅（1～N 年）", fmt_y(total_tax_no_policy))
 with colC:
     st.markdown("**差異（節稅）**")
-    kpi("到第 N 年節省的贈與稅", fmt_y(tax_saving))
+    card("到第 N 年節省的贈與稅", fmt_y(tax_saving))
 
 with st.expander("展開看『不用保單』逐年稅額", expanded=False):
     df_no = pd.DataFrame(yearly_tax_list)
     show_no = df_no.copy()
-    for c in ["現金贈與（元）","免稅後淨額（元）","應納贈與稅（元）"]:
+    for c in ["等額現金贈與（元）","免稅後淨額（元）","應納贈與稅（元）"]:
         show_no[c] = show_no[c].map(fmt_y)
     st.dataframe(show_no, use_container_width=True)
 
-# 保障倍數 KPI（若有輸入保額）
-cum_prem_to_N = annual_prem * change_year
-if benefit_sum_assured and cum_prem_to_N > 0:
-    st.markdown("**保障倍數（價值感一眼看懂）**")
+# 保障倍數「指標小卡」（若有輸入保額）
+cum_cash_to_N = annual_prem * change_year
+if benefit_sum_assured and cum_cash_to_N > 0:
+    st.markdown("**保障倍數（指標小卡）**")
     colx1, colx2 = st.columns(2)
     with colx1:
-        kpi("到第 N 年累計保費", fmt_y(cum_prem_to_N))
+        card("到第 N 年累計投入", fmt_y(cum_cash_to_N))
     with colx2:
-        kpi("保障倍數（保額 ÷ 累計保費）",
-            f"{benefit_sum_assured / cum_prem_to_N:,.2f} ×",
-            note=f"以保額 {fmt_y(benefit_sum_assured)} 計算")
+        card("保障倍數（保額 ÷ 累計投入）",
+             f"{benefit_sum_assured / cum_cash_to_N:,.2f} ×",
+             note=f"以保額 {fmt_y(benefit_sum_assured)} 計算")
     st.caption("同樣投入到第 N 年的現金流，風險時刻可放大為保額；倍數越高，資本效率越好。")
 
 st.divider()
@@ -190,9 +192,9 @@ st.markdown(f"""
 - ② 透過**保單贈與（含變更要保人）**可做到**帳戶獨立管理**，與一般銀行往來帳戶分離，降低資金混同風險；亦可作為**婚姻財富治理**的工具，釐清贈與資金之**專屬性與用途**（如教育金、長照金），提高法律與財務上的可辨識性。  
 
 **④ 稅務優惠（變更年認列現金價值）**  
-- 用保單：只在**第 {change_year} 年**對「**現金價值**」課贈與稅（多數情況低於累計保費），上方 KPI 已顯示稅額。  
-- 不用保單：必須在**第 1～{change_year} 年**每年對**年繳保費全額**課贈與稅。  
-- 上方 KPI 也呈現：到第 N 年的**稅負差（節稅金額）**。
+- 用保單：只在**第 {change_year} 年**對「**現金價值**」課贈與稅（多數情況低於累計投入），上方的**指標小卡**已顯示稅額。  
+- 不用保單：必須在**第 1～{change_year} 年**每年對**等額現金贈與**課稅（金額同上方輸入之年度現金支出）。  
+- 上方的**指標小卡**也呈現：到第 N 年的**稅負差（節稅金額）**。
 """)
 
 st.caption("提示：年末現金價值與最終保額以保險公司試算書為準；本工具著重稅務計算與策略展示。")
