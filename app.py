@@ -1,27 +1,28 @@
-# app.py — 用同樣現金流，放大保障＋更聰明贈與｜單張保單一鍵試算
+# app.py — 用同樣現金流，更聰明完成贈與｜單張保單一鍵試算（簡易/專家雙模式）
 # 執行：streamlit run app.py
 # 需求：pip install streamlit pandas
 
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="用同樣現金流，放大保障＋更聰明贈與｜單張保單一鍵試算", layout="centered")
+st.set_page_config(page_title="用同樣現金流，更聰明完成贈與｜單張保單一鍵試算", layout="centered")
 
 # ---------------- 稅制常數（114年/2025） ----------------
-EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
-BR10_NET_MAX = 28_110_000  # 10% 淨額上限（淨額）
-BR15_NET_MAX = 56_210_000  # 15% 淨額上限（淨額）
+EXEMPTION    = 2_440,000   # 年免稅額（單一贈與人）
+BR10_NET_MAX = 28_110,000  # 10% 淨額上限（淨額）
+BR15_NET_MAX = 56_210,000  # 15% 淨額上限（淨額）
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
-MAX_ANNUAL_PREM = 100_000_000  # 單年現金支出上限：1 億
+MAX_ANNUAL   = 100_000_000  # 單年現金投入上限：1 億
 
-# ---------------- 版面樣式與「指標小卡」工具 ----------------
+# ---------------- 樣式與小工具 ----------------
 st.markdown("""
 <style>
 .kpi {border:1px solid #ECECF3; border-radius:10px; padding:12px 14px; background:#FAFAFD;}
 .kpi .label {color:#5f6368; font-size:0.95rem; margin-bottom:6px;}
 .kpi .value {font-weight:700; font-variant-numeric: tabular-nums; font-size:1.05rem; line-height:1.3;}
 .kpi .note  {color:#16a34a; font-size:0.9rem; margin-top:4px;}
+.small {color:#5f6368; font-size:0.92rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -53,88 +54,92 @@ def gift_tax(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# ---------------- 行銷標題與簡介 ----------------
-st.title("用同樣現金流，放大保障＋更聰明贈與｜單張保單一鍵試算")
+# ---------------- 標題與簡介 ----------------
+st.title("用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
 with st.expander("計算邏輯（點我展開）", expanded=False):
     st.markdown("""
 - 家族設定：要保人一代 →（第 N 年變更）→ 二代；被保人二代；受益人三代。  
-- **用保單**：第 N 年把要保人改為二代，當年**視現金價值（保價金/解約金）為贈與額**。  
-- **不用保單（對照）**：若以現金方式達成資金移轉，則在第 1～N 年逐年進行**現金贈與**，依當年度免稅額與累進稅率課稅。  
-- 本頁僅比較**到變更當年**；變更後不再由一代繳保費（不再產生一代→二代的贈與）。
+- **用保單**：第 N 年把要保人改到孩子名下，當年以**現金價值（保價金/解約金）**認列贈與。  
+- **不用保單（對照）**：若以**現金贈與**達成同等規模的移轉，則在第 1～N 年逐年贈與現金，依當年免稅額與累進稅率課稅。  
+- 本頁只比較**到變更當年**；變更後不再由一代繳保費（不再產生一代→二代的贈與）。
 """)
 
-# ---------------- 1) 使用者輸入（僅三欄） ----------------
+# ---------------- 模式切換 ----------------
+simple_mode = st.toggle("簡易模式", value=True)
+
+# ---------------- 1) 三個輸入（簡潔命名＋綁定 state，方便一鍵情境） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
-    years = st.number_input("年期（年）", min_value=1, max_value=40, value=8, step=1)
+    years = st.number_input("年期（年）", min_value=1, max_value=40, value=8, step=1, key="years")
 with col2:
-    annual_prem = st.number_input(
-        "年度現金支出（元）",
-        min_value=0, max_value=MAX_ANNUAL_PREM,
-        value=6_000_000, step=100_000, format="%d",
-        help="若用保單則為年繳保費；不用保單則視為每年等額現金贈與"
-    )
+    annual = st.number_input("每年要投入多少現金（元）", min_value=0, max_value=MAX_ANNUAL,
+                             value=6_000_000, step=100_000, format="%d", key="annual_cash")
 with col3:
-    change_year = st.number_input("變更要保人年份（N）", min_value=1, max_value=40, value=2, step=1)
+    change_year = st.number_input("第幾年把保單改到孩子名下（N）", min_value=1, max_value=40,
+                                  value=2, step=1, key="change_year")
 
-if annual_prem > MAX_ANNUAL_PREM:
-    st.error("年度現金支出不可超過 1 億。"); st.stop()
+# 一鍵情境（600 萬 × 8 年，1/2 年變更）
+colb1, colb2 = st.columns(2)
+with colb1:
+    if st.button("一鍵情境：600 萬×8 年｜第 2 年變更"):
+        st.session_state.years = 8
+        st.session_state.annual_cash = 6_000_000
+        st.session_state.change_year = 2
+        st.rerun()
+with colb2:
+    if st.button("一鍵情境：600 萬×8 年｜第 1 年變更"):
+        st.session_state.years = 8
+        st.session_state.annual_cash = 6_000_000
+        st.session_state.change_year = 1
+        st.rerun()
+
+# 邏輯校驗
+if annual > MAX_ANNUAL:
+    st.error("每年投入不可超過 1 億。"); st.stop()
 if change_year > years:
     st.warning("變更年份不可超過年期，已自動調整為年期。")
     change_year = years
 
-# ---------------- 2) 自動生成「年末現金價值」表 ----------------
-# 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8年維持 95%
+# ---------------- 2) 自動生成：年末現金價值（預設比率） ----------------
+# 預設比率：Y1=50%、Y2=70%、Y3=80%、Y4=85%、Y5=88%、Y6=91%、Y7=93%、Y8=95%，>8 年維持 95%
 ratio_map = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 rows, cum = [], 0
 for y in range(1, years+1):
-    cum += annual_prem
+    cum += annual
     ratio = ratio_map.get(y, 0.95)
     cv = int(round(cum * ratio))
-    rows.append({"年度": y,
-                 "年度現金支出（元）": annual_prem,
-                 "累計投入（元）": cum,
-                 "年末現金價值（元）": cv})
+    rows.append({"年度": y, "每年投入（元）": annual, "累計投入（元）": cum, "年末現金價值（元）": cv})
 df_years = pd.DataFrame(rows)
 
-st.subheader("年度明細（依預設比率自動生成）")
-st.dataframe(
-    df_years.assign(
-        **{"年度現金支出（元）": lambda d: d["年度現金支出（元）"].map(fmt),
-           "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
-           "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt)}
-    ),
-    use_container_width=True
-)
-
-# ---------------- 3) 稅務比較：用保單 vs 不用保單（算到第 N 年） ----------------
+# ---------------- 3) 稅務比較（算到第 N 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 
-# 用保單：第 N 年變更 → 當年視為贈與 = 現金價值
+# 用保單（第 N 年變更）：當年視為贈與 = 現金價值
 gift_with_policy = cv_at_change
 net_with_policy = max(0, gift_with_policy - EXEMPTION)
 tax_with_policy, rate_with = gift_tax(net_with_policy)
 
-# 不用保單（對照）：第 1～N 年每年以「現金贈與」達成移轉（本工具以等額現金作為對照口徑）
+# 不用保單：第 1～N 年逐年「現金贈與」（對照口徑）
 total_tax_no_policy = 0
 yearly_tax_list = []
 for y in range(1, change_year+1):
-    net = max(0, annual_prem - EXEMPTION)
+    net = max(0, annual - EXEMPTION)
     t, rate = gift_tax(net)
     total_tax_no_policy += t
-    yearly_tax_list.append({
-        "年度": y,
-        "現金贈與（元）": annual_prem,
-        "免稅後淨額（元）": net,
-        "應納贈與稅（元）": t,
-        "適用稅率": rate
-    })
+    yearly_tax_list.append({"年度": y, "現金贈與（元）": annual, "免稅後淨額（元）": net, "應納贈與稅（元）": t, "適用稅率": rate})
 
 tax_saving = total_tax_no_policy - tax_with_policy
 
-st.subheader("到變更當年（N）為止的稅務對照（指標小卡）")
+# ---------------- 4) 簡易模式的話術＋重點指標 ----------------
+st.markdown(
+    f'<div class="small">用保單：第 <b>{change_year}</b> 年改到孩子名下，當年以 <b>現金價值</b> 認列贈與（通常低於累計投入）。'
+    f'　不用保單：第 <b>1～{change_year}</b> 年逐年以 <b>現金贈與</b> 達成移轉，逐年課稅。</div>',
+    unsafe_allow_html=True
+)
+st.write("")
+
 colA, colB, colC = st.columns(3)
 with colA:
     st.markdown("**用保單（第 N 年變更）**")
@@ -147,7 +152,37 @@ with colC:
     st.markdown("**差異（節稅）**")
     card("到第 N 年節省的贈與稅", fmt_y(tax_saving))
 
-with st.expander("展開看『不用保單』逐年稅額", expanded=False):
+# ---------------- 5) 專家用：明細展開 ----------------
+if simple_mode:
+    with st.expander("想看公式與年度明細？（專家用）", expanded=False):
+        st.markdown("**年度明細（依預設比率自動生成）**")
+        st.dataframe(
+            df_years.assign(
+                **{"每年投入（元）": lambda d: d["每年投入（元）"].map(fmt),
+                   "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
+                   "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt)}
+            ),
+            use_container_width=True
+        )
+
+        st.markdown("**不用保單：逐年現金贈與的稅額**")
+        df_no = pd.DataFrame(yearly_tax_list)
+        show_no = df_no.copy()
+        for c in ["現金贈與（元）","免稅後淨額（元）","應納贈與稅（元）"]:
+            show_no[c] = show_no[c].map(fmt_y)
+        st.dataframe(show_no, use_container_width=True)
+else:
+    # 專家模式直接顯示完整明細
+    st.subheader("年度明細（依預設比率自動生成）")
+    st.dataframe(
+        df_years.assign(
+            **{"每年投入（元）": lambda d: d["每年投入（元）"].map(fmt),
+               "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
+               "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt)}
+        ),
+        use_container_width=True
+    )
+    st.subheader("不用保單：逐年現金贈與的稅額")
     df_no = pd.DataFrame(yearly_tax_list)
     show_no = df_no.copy()
     for c in ["現金贈與（元）","免稅後淨額（元）","應納贈與稅（元）"]:
@@ -156,24 +191,24 @@ with st.expander("展開看『不用保單』逐年稅額", expanded=False):
 
 st.divider()
 
-# ---------------- 4) 一頁就懂：保單核心價值（不只省稅） ----------------
-st.subheader("一頁就懂：這張保單的核心價值（不只省稅）")
+# ---------------- 6) 一頁就懂：為什麼要用保單（除了節稅） ----------------
+st.subheader("為什麼要用保單（除了節稅）")
 st.markdown(f"""
-**① 保障放大（同樣現金流 ↔ 家族資源有效配置）**  
-- 不用保單：最多就是把錢分年送出。  
-- 用保單：在**需要的那一刻**，由保險把保障**放大成保額**（依商品與試算書），提升資本效率與家庭安全網。還可以指定受益人，達到定向傳承。  
+**① 放大與配置（同樣現金流，家族資源更有效）**  
+- 不用保單：最多把錢分年送出。  
+- 用保單：在**需要的那一刻**，由保險把保障**放大成保額**（依商品與試算書），提高資本效率與家庭安全網。  
 
 **② 時間確定（現金在需要時直接到位）**  
 - 給付不受市場波動影響，避免在緊急時刻折價賣資產（股權/不動產）。  
 - 對企業主與資產多為不動產者，這是一道**流動性防火牆**。  
 
 **③ 治理控管（誰拿、怎麼拿、何時拿）**  
-- ① 先由一代掌握要保人，**第 {change_year} 年**交棒給二代；受益人與比例可設計（可搭配保險信託）以避免一次性失衡、或被外力侵蝕。  
-- ② 透過**保單贈與（含變更要保人）**可做到**帳戶獨立管理**，與一般銀行往來帳戶分離，降低資金混同風險；亦可作為**婚姻財富治理**的工具，釐清贈與資金之**專屬性與用途**（如教育金、長照金），提高法律與財務上的可辨識性。  
+- ① 先由一代掌握要保人，在**第 {change_year} 年**交棒給二代；受益人與比例可設計（可搭配保險信託）避免一次性失衡或被外力侵蝕。  
+- ② 透過**保單贈與（含變更要保人）**可做到**帳戶獨立管理**，與一般銀行往來帳戶分離，降低資金混同風險；亦具**婚姻財富治理**功能，清楚界定資金的專屬性與用途（如教育金、長照金）。  
 
-**④ 稅務優惠（變更年認列現金價值）**  
-- 用保單：只在**變更年度**對「**現金價值**」課贈與稅（多數情況低於累計投入），上方對照已顯示稅額。  
-- 不用保單：逐年以**現金贈與**達成移轉，依當年度免稅額與累進稅率課稅；上方對照已呈現**稅負差**。
+**④ 稅務效果（變更年認列現金價值）**  
+- 用保單：只在**第 {change_year} 年**對「**現金價值**」課贈與稅（多數情況低於累計投入），因此**到第 N 年稅更有效率**。  
+- 不用保單：第 1～{change_year} 年逐年以**現金贈與**進行移轉，各年依免稅額與累進稅率課稅；上方指標已呈現差異。
 """)
 
 st.caption("提示：年末現金價值與最終保額以保險公司試算書為準；本工具著重稅務計算與策略展示。")
