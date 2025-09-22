@@ -180,10 +180,15 @@ df_years = pd.DataFrame(rows)
 # ---------------- 稅務比較（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 
-gift_with_policy = cv_at_change
-net_with_policy = max(0, gift_with_policy - EXEMPTION)
+# 名目累積移轉金額（兩種方式一致）：至第 N 年的「累計投入」
+nominal_transfer_to_N = annual * change_year
+
+# 保單規劃（第 N 年變更）
+gift_with_policy = cv_at_change                         # 稅務認列
+net_with_policy  = max(0, gift_with_policy - EXEMPTION)
 tax_with_policy, rate_with = gift_tax(net_with_policy)
 
+# 現金贈與（第 1～N 年）
 total_tax_no_policy, yearly_tax_list = 0, []
 for y in range(1, change_year+1):
     net = max(0, annual - EXEMPTION)
@@ -207,15 +212,20 @@ st.markdown(
 )
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
-# ---------------- 指標小卡 ----------------
+# ---------------- 指標小卡（新增：各自的「累積移轉（名目）」） ----------------
 colA, colB, colC = st.columns(3)
+
 with colA:
     st.markdown(f"**保單規劃（第 {change_year} 年變更）**")
+    card("累積移轉（名目）至第 N 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
     card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy))
     card("當年度應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
+
 with colB:
     st.markdown(f"**現金贈與（第 1～{change_year} 年）**")
+    card("累積移轉（名目）至第 N 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
     card(f"累計贈與稅（至第 {change_year} 年）", fmt_y(total_tax_no_policy))
+
 with colC:
     st.markdown("**稅負差異**")
     card(f"至第 {change_year} 年節省之贈與稅", fmt_y(tax_saving))
@@ -233,7 +243,7 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
             }
         ),
         use_container_width=True,
-        hide_index=True,   # ← 隱藏索引欄
+        hide_index=True,   # 隱藏索引欄
     )
 
     st.markdown("**現金贈與：逐年稅額**")
@@ -244,7 +254,7 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
     st.dataframe(
         show_no,
         use_container_width=True,
-        hide_index=True,   # ← 隱藏索引欄
+        hide_index=True,   # 隱藏索引欄
     )
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
