@@ -1,4 +1,4 @@
-# app.py — 保單規劃｜用同樣現金流，更聰明完成贈與（簡易模式｜高資產語氣＋高雅配色｜預設第2年變更）
+# app.py — 保單規劃｜用同樣現金流，更聰明完成贈與
 # 執行：streamlit run app.py
 # 需求：pip install streamlit pandas
 
@@ -25,10 +25,10 @@ for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# 預設比率
+# 年末現金價值預設比率
 RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 
-# ---------------- 樣式（含寬版容器與預設按鈕美工） ----------------
+# ---------------- 樣式（含寬版容器、KPI、小按鈕美工） ----------------
 st.markdown(
     """
 <style>
@@ -55,21 +55,19 @@ hr.custom{ border:none; border-top:1px solid var(--line); margin:12px 0 6px; }
   border-radius:999px; font-size:.82rem; color:var(--sub); background:#fff; margin-right:8px; }
 .section{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; }
 
-/* 預設按鈕列 */
+/* 一鍵示範按鈕列 */
 .preset-wrap{ display:flex; gap:16px; margin:6px 0 10px; }
 .preset .stButton>button{
   padding:.60rem 1rem; border-radius:999px; width:100%;
   font-weight:700 !important; transition:all .15s ease;
 }
-
-/* 套用中：香檳金底＋粗金框＋陰影（加上 !important 以確保套用） */
+/* 套用中：香檳金底＋粗金框＋陰影 */
 .preset.primary .stButton>button{
   background:var(--gold) !important;
   color:var(--gold-ink) !important;
   border:2px solid var(--gold) !important;
   box-shadow:0 6px 14px rgba(200,169,106,.35) !important;
 }
-
 /* 非套用：白底描邊；hover 提示金色 */
 .preset.outline .stButton>button{
   background:#fff !important; color:var(--ink) !important; border:1px solid var(--line) !important;
@@ -119,11 +117,8 @@ with st.expander("規劃摘要", expanded=True):
 
 # ---------------- 一鍵示範（同步更新輸入元件＋強化視覺） ----------------
 def apply_preset(name: str, y: int, a: int, c: int):
-    # 更新邏輯用 state
     st.session_state.update({"years": y, "annual_cash": a, "change_year": c})
-    # 同步更新輸入元件的 state，畫面立即反映
     st.session_state.update({"years_input": y, "annual_input": a, "change_input": c})
-    # 標示目前選用哪個預設
     st.session_state["active_preset"] = name
 
 st.markdown('<div class="preset-wrap">', unsafe_allow_html=True)
@@ -225,7 +220,7 @@ with colC:
     st.markdown("**稅負差異**")
     card(f"至第 {change_year} 年節省之贈與稅", fmt_y(tax_saving))
 
-# ---------------- 明細（預設收合） ----------------
+# ---------------- 明細（預設收合；索引隱藏） ----------------
 st.write("")  # 空行
 with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False):
     st.markdown("**年度現金價值（依預設比率推估）**")
@@ -238,13 +233,19 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
             }
         ),
         use_container_width=True,
+        hide_index=True,   # ← 隱藏索引欄
     )
+
     st.markdown("**現金贈與：逐年稅額**")
     df_no = pd.DataFrame(yearly_tax_list)
     show_no = df_no.copy()
     for c in ["現金贈與（元）", "免稅後淨額（元）", "應納贈與稅（元）"]:
         show_no[c] = show_no[c].map(fmt_y)
-    st.dataframe(show_no, use_container_width=True)
+    st.dataframe(
+        show_no,
+        use_container_width=True,
+        hide_index=True,   # ← 隱藏索引欄
+    )
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
