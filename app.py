@@ -8,27 +8,30 @@ import streamlit as st
 st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="wide")
 
 # ---------------- 稅制常數（114年/2025） ----------------
-EXEMPTION    = 2_440_000
-BR10_NET_MAX = 28_110_000
-BR15_NET_MAX = 56_210_000
+EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
+BR10_NET_MAX = 28_110_000  # 10% 淨額上限
+BR15_NET_MAX = 56_210_000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
 DEFAULTS = {
-    "years": 8, "annual_cash": 10_000_000, "change_year": 2,
-    "years_input": 8, "annual_input": 10_000_000, "change_input": 2,
-    "active_preset": "p1"  # p1=1,000萬×8年｜第2年變更（預設選中）
+    "years": 8,                 # 預設年期
+    "annual_cash": 10_000_000,  # 預設年繳 1,000 萬
+    "change_year": 2,           # 預設第 2 年變更
+    "years_input": 8,
+    "annual_input": 10_000_000,
+    "change_input": 2,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# 年末現金價值預設比率
+# 年末現金價值預設比率（可依商品微調）
 RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 
-# ---------------- 樣式（含寬版容器、KPI、小按鈕美工） ----------------
+# ---------------- 樣式（含寬版容器、KPI 卡、提示） ----------------
 st.markdown(
     """
 <style>
@@ -55,26 +58,12 @@ hr.custom{ border:none; border-top:1px solid var(--line); margin:12px 0 6px; }
   border-radius:999px; font-size:.82rem; color:var(--sub); background:#fff; margin-right:8px; }
 .section{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; }
 
-/* 一鍵示範按鈕列 */
-.preset-wrap{ display:flex; gap:16px; margin:6px 0 10px; }
-.preset .stButton>button{
-  padding:.60rem 1rem; border-radius:999px; width:100%;
-  font-weight:700 !important; transition:all .15s ease;
+/* 頁尾聲明 */
+.footer-note{
+  margin-top:18px; padding:14px 16px; border:1px dashed var(--line);
+  background:#fff; border-radius:12px; color:#334155; font-size:.92rem;
 }
-/* 套用中：香檳金底＋粗金框＋陰影 */
-.preset.primary .stButton>button{
-  background:var(--gold) !important;
-  color:var(--gold-ink) !important;
-  border:2px solid var(--gold) !important;
-  box-shadow:0 6px 14px rgba(200,169,106,.35) !important;
-}
-/* 非套用：白底描邊；hover 提示金色 */
-.preset.outline .stButton>button{
-  background:#fff !important; color:var(--ink) !important; border:1px solid var(--line) !important;
-}
-.preset.outline .stButton>button:hover{
-  border-color:var(--gold) !important; color:var(--gold-ink) !important; background:#fff7e6 !important;
-}
+.footer-note b{ color:#111827; }
 </style>
 """,
     unsafe_allow_html=True
@@ -86,19 +75,25 @@ def card(label: str, value: str, note: str = ""):
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def fmt(n: float) -> str: return f"{n:,.0f}"
-def fmt_y(n: float) -> str: return f"{fmt(n)} 元"
+def fmt(n: float) -> str:
+    return f"{n:,.0f}"
+
+def fmt_y(n: float) -> str:
+    return f"{fmt(n)} 元"
 
 def gift_tax(net: int):
-    if net <= 0: return 0, "—"
-    if net <= BR10_NET_MAX: return int(round(net*RATE_10)), "10%"
+    """依累進稅率計算單年贈與稅（含基稅）。回傳 (稅額, 稅率字串)"""
+    if net <= 0:
+        return 0, "—"
+    if net <= BR10_NET_MAX:
+        return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
-        base = BR10_NET_MAX*RATE_10
-        extra = (net-BR10_NET_MAX)*RATE_15
-        return int(round(base+extra)), "15%"
-    base = BR10_NET_MAX*RATE_10 + (BR15_NET_MAX-BR10_NET_MAX)*RATE_15
-    extra = (net-BR15_NET_MAX)*RATE_20
-    return int(round(base+extra)), "20%"
+        base = BR10_NET_MAX * RATE_10
+        extra = (net - BR10_NET_MAX) * RATE_15
+        return int(round(base + extra)), "15%"
+    base = BR10_NET_MAX * RATE_10 + (BR15_NET_MAX - BR10_NET_MAX) * RATE_15
+    extra = (net - BR15_NET_MAX) * RATE_20
+    return int(round(base + extra)), "20%"
 
 # ---------------- 標題 ----------------
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
@@ -115,34 +110,7 @@ with st.expander("規劃摘要", expanded=True):
 '''
     )
 
-# ---------------- 一鍵示範（同步更新輸入元件＋強化視覺） ----------------
-def apply_preset(name: str, y: int, a: int, c: int):
-    st.session_state.update({"years": y, "annual_cash": a, "change_year": c})
-    st.session_state.update({"years_input": y, "annual_input": a, "change_input": c})
-    st.session_state["active_preset"] = name
-
-st.markdown('<div class="preset-wrap">', unsafe_allow_html=True)
-colp1, colp2 = st.columns([1,1])
-
-with colp1:
-    active = (st.session_state.active_preset == "p1")
-    cclass = "preset primary" if active else "preset outline"
-    st.markdown(f'<div class="{cclass}">', unsafe_allow_html=True)
-    label1 = ("✓ " if active else "") + "一鍵示範：1,000 萬 × 8 年｜第 2 年變更"
-    st.button(label1, key="btn_p1", on_click=apply_preset, args=("p1", 8, 10_000_000, 2))
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with colp2:
-    active = (st.session_state.active_preset == "p2")
-    cclass = "preset primary" if active else "preset outline"
-    st.markdown(f'<div class="{cclass}">', unsafe_allow_html=True)
-    label2 = ("✓ " if active else "") + "一鍵示範：1,000 萬 × 8 年｜第 1 年變更"
-    st.button(label2, key="btn_p2", on_click=apply_preset, args=("p2", 8, 10_000_000, 1))
-    st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ---------------- 三個輸入（直接綁定到 *_input key） ----------------
+# ---------------- 三個輸入 ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
     years = st.number_input("年期（年）", min_value=1, max_value=40,
@@ -159,42 +127,47 @@ st.session_state.years = int(st.session_state.years_input)
 st.session_state.annual_cash = int(st.session_state.annual_input)
 st.session_state.change_year = int(st.session_state.change_input)
 
-# 校驗
+# 基本校驗
 if st.session_state.annual_cash > MAX_ANNUAL:
-    st.error("每年投入金額不可超過 1 億元。"); st.stop()
+    st.error("每年投入金額不可超過 1 億元。")
+    st.stop()
 if st.session_state.change_year > st.session_state.years:
     st.warning("變更年份不可晚於年期，已自動校正為年期。")
     st.session_state.change_year = st.session_state.years
 
-years, annual, change_year = st.session_state.years, st.session_state.annual_cash, st.session_state.change_year
+years       = st.session_state.years
+annual      = st.session_state.annual_cash
+change_year = st.session_state.change_year
 
 # ---------------- 依比率生成年度現金價值 ----------------
 rows, cum = [], 0
-for y in range(1, years+1):
+for y in range(1, years + 1):
     cum += annual
     ratio = RATIO_MAP.get(y, 0.95)
     cv = int(round(cum * ratio))
     rows.append({"年度": y, "每年投入（元）": annual, "累計投入（元）": cum, "年末現金價值（元）": cv})
 df_years = pd.DataFrame(rows)
 
-# ---------------- 稅務比較（算到第 change_year 年） ----------------
+# ---------------- 稅務與金額（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 
-# 名目累積移轉金額（兩種方式一致）：至第 N 年的「累計投入」
+# 「名目」累積移轉金額（兩種方式一致）：至第 change_year 年的累計投入
 nominal_transfer_to_N = annual * change_year
 
-# 保單規劃（第 N 年變更）
-gift_with_policy = cv_at_change                         # 稅務認列
+# 保單規劃（第 change_year 年變更）
+gift_with_policy = cv_at_change                         # 稅務認列金額
 net_with_policy  = max(0, gift_with_policy - EXEMPTION)
 tax_with_policy, rate_with = gift_tax(net_with_policy)
 
-# 現金贈與（第 1～N 年）
+# 現金贈與（第 1～change_year 年）
 total_tax_no_policy, yearly_tax_list = 0, []
-for y in range(1, change_year+1):
+for y in range(1, change_year + 1):
     net = max(0, annual - EXEMPTION)
     t, rate = gift_tax(net)
     total_tax_no_policy += t
-    yearly_tax_list.append({"年度": y, "現金贈與（元）": annual, "免稅後淨額（元）": net, "應納贈與稅（元）": t, "適用稅率": rate})
+    yearly_tax_list.append({
+        "年度": y, "現金贈與（元）": annual, "免稅後淨額（元）": net, "應納贈與稅（元）": t, "適用稅率": rate
+    })
 
 tax_saving = total_tax_no_policy - tax_with_policy
 
@@ -212,18 +185,18 @@ st.markdown(
 )
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
-# ---------------- 指標小卡（新增：各自的「累積移轉（名目）」） ----------------
+# ---------------- 指標小卡（動態呈現“第 N 年”） ----------------
 colA, colB, colC = st.columns(3)
 
 with colA:
     st.markdown(f"**保單規劃（第 {change_year} 年變更）**")
-    card("累積移轉（名目）至第 N 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
+    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
     card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy))
     card("當年度應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
 
 with colB:
     st.markdown(f"**現金贈與（第 1～{change_year} 年）**")
-    card("累積移轉（名目）至第 N 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
+    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
     card(f"累計贈與稅（至第 {change_year} 年）", fmt_y(total_tax_no_policy))
 
 with colC:
@@ -243,7 +216,7 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
             }
         ),
         use_container_width=True,
-        hide_index=True,   # 隱藏索引欄
+        hide_index=True,
     )
 
     st.markdown("**現金贈與：逐年稅額**")
@@ -254,7 +227,7 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
     st.dataframe(
         show_no,
         use_container_width=True,
-        hide_index=True,   # 隱藏索引欄
+        hide_index=True,
     )
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
@@ -278,4 +251,15 @@ st.markdown(
 - 保單規劃：僅於第 {change_year} 年就「**保單價值準備金**」計贈與稅（多數情況低於累計投入），稅負效率通常更佳。  
 - 現金贈與：需於第 1～{change_year} 年逐年就現金贈與課稅；上方指標已呈現兩者差異。
 """
+)
+
+# ---------------- 重要提醒（頁面最下方） ----------------
+st.markdown(
+    """
+<div class="footer-note">
+<b>重要提醒：</b>本頁內容僅為示範與教育性說明參考，實際權利義務以<strong>保單條款</strong>、保險公司<strong>核保／保全規定</strong>、
+以及您與專業顧問完成之<strong>個別化規劃文件</strong>為準。稅制數值採目前假設，若法規調整，請以最新公告為準。
+</div>
+""",
+    unsafe_allow_html=True
 )
