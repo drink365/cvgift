@@ -124,17 +124,15 @@ with c3:
     st.caption("＊第 3 年保費自動等於第 1 年保費")
     st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
 
-# 寫回鎖定的保費值
+# 寫回鎖定的保費值（顯示用的 display 欄位不參與運算）
 st.session_state.y2_prem = st.session_state.y1_prem
 st.session_state.y3_prem = st.session_state.y1_prem
 
 # ---------------- 基本校驗 ----------------
 years = int(st.session_state.years_total)
 change_year = int(st.session_state.change_year)
-if change_year > years:
-    st.warning("變更年份不可晚於年期，已自動校正為年期。")
-    change_year = years
-    st.session_state.change_year = years
+# 只在本地校正，不回寫 widget 的 session_state，避免 Streamlit 錯誤
+change_year = min(change_year, years)
 
 # ---------------- 生成年度序列（第4年起保費=第1年保費） ----------------
 def build_schedule(years_total: int):
@@ -142,10 +140,7 @@ def build_schedule(years_total: int):
     p1 = int(st.session_state.y1_prem)
     for y in range(1, years_total+1):
         # 保費
-        if y in (1, 2, 3):
-            premium = p1
-        else:
-            premium = p1  # 第 4 年起沿用第 1 年保費
+        premium = p1  # 前三年與第 4 年起皆為第 1 年保費
         cum += premium
 
         # 年末現金價值
