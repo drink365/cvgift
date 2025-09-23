@@ -15,14 +15,11 @@ RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
-# ---------------- 初始化 Session State（預設第 1 年變更） ----------------
+# ---------------- 初始化 Session State（只用 State 設定預設值；避免 value= 再指定） ----------------
 DEFAULTS = {
-    "years": 8,                 # 預設年期
-    "annual_cash": 10_000_000,  # 預設年繳 1,000 萬
-    "change_year": 1,           # **預設第 1 年變更**
-    "years_input": 8,
-    "annual_input": 10_000_000,
-    "change_input": 1,
+    "years_input": 8,            # 年期（年）
+    "annual_input": 10_000_000,  # 每年投入（元）
+    "change_input": 1,           # 預設第 1 年變更要保人
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -110,34 +107,40 @@ with st.expander("規劃摘要", expanded=True):
 '''
     )
 
-# ---------------- 三個輸入（預設第 1 年變更） ----------------
+# ---------------- 三個輸入（不使用 value=，只用 Session State 預設） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
-    years = st.number_input("年期（年）", min_value=1, max_value=40,
-                            value=st.session_state.years_input, step=1, key="years_input")
+    st.number_input(
+        "年期（年）", min_value=1, max_value=40, step=1,
+        key="years_input",
+        help="保單繳費年期或試算年期"
+    )
 with col2:
-    annual = st.number_input("每年投入現金（元）", min_value=0, max_value=MAX_ANNUAL,
-                             value=st.session_state.annual_input, step=100_000, format="%d", key="annual_input")
+    st.number_input(
+        "每年投入現金（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d",
+        key="annual_input",
+        help="單一贈與人每年以現金投入之金額（上限 1 億）"
+    )
 with col3:
-    change_year = st.number_input("第幾年變更要保人（交棒）", min_value=1, max_value=40,
-                                  value=st.session_state.change_input, step=1, key="change_input")
+    st.number_input(
+        "第幾年變更要保人（交棒）", min_value=1, max_value=40, step=1,
+        key="change_input",
+        help="在此年度以前由第一代繳費，該年度辦理要保人變更"
+    )
 
-# 同步邏輯用 state
-st.session_state.years = int(st.session_state.years_input)
-st.session_state.annual_cash = int(st.session_state.annual_input)
-st.session_state.change_year = int(st.session_state.change_input)
+# 讀取使用者輸入
+years       = int(st.session_state.years_input)
+annual      = int(st.session_state.annual_input)
+change_year = int(st.session_state.change_input)
 
-# 基本校驗
-if st.session_state.annual_cash > MAX_ANNUAL:
+# 基本校驗與自動校正
+if annual > MAX_ANNUAL:
     st.error("每年投入金額不可超過 1 億元。")
     st.stop()
-if st.session_state.change_year > st.session_state.years:
+if change_year > years:
     st.warning("變更年份不可晚於年期，已自動校正為年期。")
-    st.session_state.change_year = st.session_state.years
-
-years       = st.session_state.years
-annual      = st.session_state.annual_cash
-change_year = st.session_state.change_year
+    change_year = years
+    st.session_state.change_input = years  # 回寫界面
 
 # ---------------- 依比率生成年度現金價值 ----------------
 rows, cum = [], 0
@@ -188,20 +191,22 @@ st.markdown('<hr class="custom">', unsafe_allow_html=True)
 # ---------------- 指標小卡（動態呈現“第 N 年”） ----------------
 colA, colB, colC = st.columns(3)
 
+def card_fmt_money(v): return fmt(v) + " 元"
+
 with colA:
     st.markdown(f"**保單規劃（第 {change_year} 年變更）**")
-    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
-    card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy))
-    card("當年度應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
+    card(f"累積移轉（名目）至第 {change_year} 年", card_fmt_money(nominal_transfer_to_N), note="= 累計投入")
+    card("變更當年視為贈與（保單價值準備金）", card_fmt_money(gift_with_policy))
+    card("當年度應納贈與稅", card_fmt_money(tax_with_policy), note=f"稅率 {rate_with}")
 
 with colB:
     st.markdown(f"**現金贈與（第 1～{change_year} 年）**")
-    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 累計投入")
-    card(f"累計贈與稅（至第 {change_year} 年）", fmt_y(total_tax_no_policy))
+    card(f"累積移轉（名目）至第 {change_year} 年", card_fmt_money(nominal_transfer_to_N), note="= 累計投入")
+    card(f"累計贈與稅（至第 {change_year} 年）", card_fmt_money(total_tax_no_policy))
 
 with colC:
     st.markdown("**稅負差異**")
-    card(f"至第 {change_year} 年節省之贈與稅", fmt_y(tax_saving))
+    card(f"至第 {change_year} 年節省之贈與稅", card_fmt_money(tax_saving))
 
 # ---------------- 明細（預設收合；索引隱藏） ----------------
 st.write("")  # 空行
@@ -223,7 +228,7 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
     df_no = pd.DataFrame(yearly_tax_list)
     show_no = df_no.copy()
     for c in ["現金贈與（元）", "免稅後淨額（元）", "應納贈與稅（元）"]:
-        show_no[c] = show_no[c].map(fmt_y)
+        show_no[c] = show_no[c].map(lambda x: fmt(x) + " 元")
     st.dataframe(
         show_no,
         use_container_width=True,
