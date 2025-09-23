@@ -8,9 +8,9 @@ import streamlit as st
 st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="wide")
 
 # ---------------- 稅制常數（114年/2025） ----------------
-EXEMPTION    = 2_440,000   # 年免稅額（單一贈與人）
-BR10_NET_MAX = 28_110,000  # 10% 淨額上限
-BR15_NET_MAX = 56_210,000  # 15% 淨額上限
+EXEMPTION    = 2_440_000    # 年免稅額（單一贈與人）
+BR10_NET_MAX = 28_110_000   # 10% 淨額上限
+BR15_NET_MAX = 56_210_000   # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
@@ -48,7 +48,6 @@ hr.custom{ border:none; border-top:1px solid var(--line); margin:12px 0 6px; }
 .section{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; }
 .footer-note{ margin-top:18px; padding:14px 16px; border:1px dashed var(--line); background:#fff; border-radius:12px; color:#334155; font-size:.92rem; }
 .note-inline{ color:#64748b; font-size:.9rem; margin-left:.5rem; }
-.badge{ display:inline-block; padding:2px 8px; border:1px solid var(--line); border-radius:999px; font-size:.78rem; color:#0f172a; background:#fff;}
 </style>
 """,
     unsafe_allow_html=True
@@ -99,21 +98,7 @@ with st.expander("規劃摘要", expanded=True):
     )
 
 # ---------------- 輸入（只保留 1～3 年） ----------------
-row_top = st.columns([3, 1])
-with row_top[0]:
-    # 改用 selectbox：乾淨且無 ± 按鈕
-    st.selectbox(
-        "第幾年變更要保人（交棒）",
-        options=[1, 2, 3],
-        index=0,
-        key="change_year"
-    )
-with row_top[1]:
-    st.markdown('<span class="badge">示範工具（1～3 年）</span>', unsafe_allow_html=True)
-
-st.markdown('<hr class="custom">', unsafe_allow_html=True)
-
-# 年繳保費（改動即清空 1~3 年保價金）
+# 1) 年繳保費（在前）
 st.number_input(
     "年繳保費（元）",
     min_value=0, max_value=MAX_ANNUAL,
@@ -122,6 +107,16 @@ st.number_input(
     help="預設 10,000,000（1,000 萬）。如改動，系統會把第 1～3 年保價金清空為 0，請自行輸入。"
 )
 
+# 2) 第幾年變更要保人（在後）
+st.selectbox(
+    "第幾年變更要保人（交棒）",
+    options=[1, 2, 3],
+    index=0,
+    key="change_year"
+)
+
+st.markdown('<hr class="custom">', unsafe_allow_html=True)
+
 # 根據年繳保費動態限制各年保價金上限：1×/2×/3×
 p = int(st.session_state.y1_prem)
 max_y1 = p * 1
@@ -129,7 +124,6 @@ max_y2 = p * 2
 max_y3 = p * 3
 
 st.subheader("前三年保價金（年末現金價值）")
-st.markdown('<span class="small">限制：第 1 年 ≤ 年繳保費；第 2 年 ≤ 2 × 年繳保費；第 3 年 ≤ 3 × 年繳保費。</span>', unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
 with c1:
