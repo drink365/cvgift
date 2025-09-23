@@ -15,14 +15,14 @@ RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
-# ---------------- 初始化 Session State ----------------
+# ---------------- 初始化 Session State（預設第 1 年變更） ----------------
 DEFAULTS = {
     "years": 8,                 # 預設年期
     "annual_cash": 10_000_000,  # 預設年繳 1,000 萬
-    "change_year": 2,           # 預設第 2 年變更
+    "change_year": 1,           # **預設第 1 年變更**
     "years_input": 8,
     "annual_input": 10_000_000,
-    "change_input": 2,
+    "change_input": 1,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -110,7 +110,7 @@ with st.expander("規劃摘要", expanded=True):
 '''
     )
 
-# ---------------- 三個輸入 ----------------
+# ---------------- 三個輸入（預設第 1 年變更） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
     years = st.number_input("年期（年）", min_value=1, max_value=40,
