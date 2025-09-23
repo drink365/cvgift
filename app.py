@@ -1,4 +1,4 @@
-# app.py — 保單規劃｜用同樣現金流，更聰明完成贈與（1～3 年極簡版＋8點好處＋明細表）
+# app.py — 保單規劃｜用同樣現金流，更聰明完成贈與（1～3 年極簡版＋8點好處＋明細表＋下載）
 # 執行：streamlit run app.py
 # 需求：pip install streamlit pandas
 
@@ -16,13 +16,13 @@ MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
 DEFAULTS = {
-    "change_year": 1,           # 第幾年變更要保人（交棒）：1～3
-    "y1_prem": 10_000_000,      # 年繳保費（= 每年保費，1～3 年皆相同），預設 1,000 萬
+    "change_year": 1,
+    "y1_prem": 10_000_000,
     "y2_prem": 10_000_000,
     "y3_prem": 10_000_000,
-    "y1_cv":   5_000_000,       # 第1年保價金預設 500 萬
-    "y2_cv":  14_000_000,       # 第2年保價金預設 1,400 萬
-    "y3_cv":  24_000_000,       # 第3年保價金預設 2,400 萬
+    "y1_cv":   5_000_000,
+    "y2_cv":  14_000_000,
+    "y3_cv":  24_000_000,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -57,7 +57,6 @@ def fmt(n: float) -> str: return f"{n:,.0f}"
 def fmt_y(n: float) -> str: return f"{fmt(n)} 元"
 
 def tax_calc(net:int):
-    """累進稅率計算；回傳(應納稅額, 適用稅率字串)"""
     if net <= 0: return 0, "—"
     if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
@@ -68,12 +67,10 @@ def tax_calc(net:int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# --- 行為：改年繳保費時（= 第 1 年保費）— 清空前三年保價金 ---
 def _on_prem_change():
     p = int(st.session_state.y1_prem)
     st.session_state.y2_prem = p
     st.session_state.y3_prem = p
-    # 改動年繳保費→清空 1~3 年保價金
     st.session_state.y1_cv = 0
     st.session_state.y2_cv = 0
     st.session_state.y3_cv = 0
@@ -82,36 +79,17 @@ def _on_prem_change():
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
-with st.expander("規劃摘要（說明）", expanded=True):
-    st.markdown(
-        """
-- 規劃設定：要保人第一代 → 變更為第二代；被保人第二代；受益人第三代。  
-- 保單規劃：於變更要保人年度，以當時**保單價值準備金**認列贈與。  
-- 現金贈與：以現金達成同額移轉，逐年課稅。  
-- 本試算僅比較**變更當年之前**之稅負差；本極簡版僅涵蓋 1～3 年。
-        """
-    )
-
-# ---------------- 輸入（只保留 1～3 年） ----------------
-# 1) 年繳保費（在前）
-st.number_input(
-    "年繳保費（元）",
+# ---------------- 輸入 ----------------
+st.number_input("年繳保費（元）",
     min_value=0, max_value=MAX_ANNUAL,
     step=100_000, format="%d",
-    key="y1_prem", on_change=_on_prem_change,
-)
+    key="y1_prem", on_change=_on_prem_change)
 
-# 2) 第幾年變更要保人（在後；1～3 年）
-st.selectbox(
-    "第幾年變更要保人（交棒）",
-    options=[1, 2, 3],
-    index=0,
-    key="change_year"
-)
+st.selectbox("第幾年變更要保人（交棒）",
+    options=[1, 2, 3], index=0, key="change_year")
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
-# 根據年繳保費動態限制各年保價金上限：1×/2×/3×
 p = int(st.session_state.y1_prem)
 max_y1, max_y2, max_y3 = p*1, p*2, p*3
 
@@ -124,15 +102,14 @@ with c2:
 with c3:
     st.number_input("第 3 年保價金（元）", min_value=0, max_value=max_y3, step=100_000, format="%d", key="y3_cv")
 
-# 寫回鎖定保費（內部仍保持 y2/y3 = y1）
 st.session_state.y2_prem = st.session_state.y1_prem
 st.session_state.y3_prem = st.session_state.y1_prem
 
-# ---------------- 年度資料（只建立 1～3 年） ----------------
+# ---------------- 年度資料 ----------------
 def build_schedule_3y():
     rows, cum = [], 0
     for y in (1, 2, 3):
-        premium = int(st.session_state.y1_prem)  # 每年相同（年繳）
+        premium = int(st.session_state.y1_prem)
         cum += premium
         cv = int(st.session_state[f"y{y}_cv"])
         rows.append({"年度": y, "每年投入（元）": premium, "累計投入（元）": cum, "年末現金價值（元）": cv})
@@ -141,7 +118,6 @@ def build_schedule_3y():
 df_years = build_schedule_3y()
 change_year = int(st.session_state.change_year)
 
-# ---------------- 稅務與金額（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 nominal_transfer_to_N = int(df_years.loc[df_years["年度"] <= change_year, "每年投入（元）"].sum())
 
@@ -171,49 +147,48 @@ st.markdown('<hr class="custom">', unsafe_allow_html=True)
 colA, colB, colC = st.columns(3)
 with colA:
     st.markdown(f"**保單規劃（第 {change_year} 年變更）**")
-    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 實際投入總和")
-    card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy),
-         note="以保單價值準備金認列，非名目投入總和")
+    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N))
+    card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy))
     card("當年度應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
 with colB:
     st.markdown(f"**現金贈與（第 1～{change_year} 年）**")
-    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 實際投入總和")
+    card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N))
     card(f"累計贈與稅（至第 {change_year} 年）", fmt_y(total_tax_no_policy))
 with colC:
     st.markdown("**稅負差異**")
     card(f"至第 {change_year} 年{saving_label}", fmt_y(abs(tax_saving)))
 
-# ---------------- 明細（恢復且預設展開） ----------------
-with st.expander("年度明細與逐年稅額（1～3 年）", expanded=True):
+# ---------------- 明細（收合＋下載 CSV） ----------------
+st.markdown("")  # 空一行
+with st.expander("年度明細與逐年稅額（1～3 年）", expanded=False):
     st.markdown("**年度現金價值（1～3 年皆為手動輸入）**")
-    st.dataframe(
-        df_years.assign(
-            **{
-                "每年投入（元）": lambda d: d["每年投入（元）"].map(fmt),
-                "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
-                "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt),
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
+    df_show = df_years.assign(
+        **{
+            "每年投入（元）": lambda d: d["每年投入（元）"].map(fmt),
+            "累計投入（元）": lambda d: d["累計投入（元）"].map(fmt),
+            "年末現金價值（元）": lambda d: d["年末現金價值（元）"].map(fmt),
+        }
     )
+    st.dataframe(df_show, use_container_width=True, hide_index=True)
+
     st.markdown("**現金贈與：逐年稅額（第 1～變更年）**")
     df_no = pd.DataFrame(sorted(yearly_tax_list, key=lambda x: x["年度"]))
-    show_no = df_no.copy()
+    df_no_show = df_no.copy()
     for c in ["現金贈與（元）", "免稅後淨額（元）", "應納贈與稅（元）"]:
-        show_no[c] = show_no[c].map(fmt_y)
-    st.dataframe(show_no, use_container_width=True, hide_index=True)
+        df_no_show[c] = df_no_show[c].map(fmt_y)
+    st.dataframe(df_no_show, use_container_width=True, hide_index=True)
 
-# ---------------- 規劃摘要 ----------------
-with st.expander("規劃摘要", expanded=False):
-    lines = [
-        f"以同樣的現金流，若在第 {change_year} 年變更要保人，當年度以保單價值準備金認列贈與 {fmt_y(gift_with_policy)}。",
-        f"若改以現金逐年贈與至第 {change_year} 年，累計贈與稅約 {fmt_y(total_tax_no_policy)}；採保單規劃同年度稅額約 {fmt_y(tax_with_policy)}。",
-        f"因此至第 {change_year} 年「{saving_label.replace('之贈與稅','')}」約 {fmt_y(abs(tax_saving))}。"
-    ]
-    st.write("\n\n".join(f"• {t}" for t in lines))
+    # 匯出 CSV
+    csv_all = pd.concat([df_years, df_no], axis=1)
+    csv_bytes = csv_all.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "下載明細（CSV）",
+        data=csv_bytes,
+        file_name="年度明細_逐年稅額.csv",
+        mime="text/csv"
+    )
 
-# ---------------- 8 點好處（第 1 點已修正敘述） ----------------
+# ---------------- 8 點好處 ----------------
 st.subheader("贈與完成後：可達成之效果")
 st.markdown(
     f"""
