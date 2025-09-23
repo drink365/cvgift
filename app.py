@@ -74,7 +74,7 @@ def gift_tax(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# --- 當第 1 年保費被修改：同步第 2、3 年保費；按 50/70/80% 重算前三年現價 ---
+# --- 第 1 年保費改動時：同步第 2、3 年保費；按 50/70/80% 重算前三年現價 ---
 def _sync_from_y1():
     p = int(st.session_state.y1_prem)
     st.session_state.y2_prem = p
@@ -116,34 +116,30 @@ with c2:
     st.number_input("第 2 年保費（元）", value=st.session_state.y2_prem,
                     min_value=0, max_value=MAX_ANNUAL, step=0, format="%d",
                     key="y2_prem_display", disabled=True)
-    st.caption("＊第 2 年保費自動等於第 1 年保費")
     st.number_input("第 2 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y2_cv")
 with c3:
     st.number_input("第 3 年保費（元）", value=st.session_state.y3_prem,
                     min_value=0, max_value=MAX_ANNUAL, step=0, format="%d",
                     key="y3_prem_display", disabled=True)
-    st.caption("＊第 3 年保費自動等於第 1 年保費")
     st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
 
-# 寫回鎖定的保費值（顯示用的 display 欄位不參與運算）
+# 寫回鎖定的保費值（顯示用 display 欄位不參與運算）
 st.session_state.y2_prem = st.session_state.y1_prem
 st.session_state.y3_prem = st.session_state.y1_prem
 
-# ---------------- 年期推導與校正 ----------------
+# ---------------- 年期推導 ----------------
 change_year = int(st.session_state.change_year)
 # 年期自動決定：至少到第 8 年；若變更年 > 8，就延伸到該年（最多 10）
 years = max(8, min(change_year, 10))
 
-# ---------------- 生成年度序列（第 4 年起保費 = 第 1 年保費） ----------------
+# ---------------- 生成年度序列（每年保費 = 第 1 年保費） ----------------
 def build_schedule(years_total: int):
     rows, cum = [], 0
     p1 = int(st.session_state.y1_prem)
     for y in range(1, years_total+1):
-        # 保費（第 1 年起每年相同）
-        premium = p1
+        premium = p1  # 每年相同
         cum += premium
 
-        # 年末現金價值
         if y == 1:
             cv = int(st.session_state.y1_cv)
         elif y == 2:
@@ -159,13 +155,12 @@ def build_schedule(years_total: int):
 
 df_years = build_schedule(years)
 
-# ---------------- 稅務與金額（算到第 change_year 年；若 change_year>years 也能覆蓋） ----------------
-# 確保 DataFrame 涵蓋變更年
+# 若變更年 > 年期，補齊到變更年
 if change_year > years:
-    # 追加到變更年
     df_years = build_schedule(change_year)
     years = change_year
 
+# ---------------- 稅務與金額（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 nominal_transfer_to_N = int(df_years.loc[df_years["年度"] <= change_year, "每年投入（元）"].sum())
 
@@ -266,6 +261,5 @@ st.markdown(
 保險公司<strong>核保／保全規定</strong>與<strong>個別化規劃文件</strong>為準。稅制數值採目前假設，
 若法規調整，請以最新公告為準。
 </div>
-""",
-    unsafe_allow_html=True
-)
+"""
+, unsafe_allow_html=True)
