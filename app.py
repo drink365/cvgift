@@ -24,10 +24,10 @@ DEFAULTS = {
     "y2_prem": 10_000_000,
     "y3_prem": 10_000_000,
 
-    # 前三年年末現金價值（手動輸入；保留預設）
-    "y1_cv":   5_000_000,
-    "y2_cv":  14_000_000,
-    "y3_cv":  24_000_000,
+    # 前三年年末現金價值（手動輸入；預設值）
+    "y1_cv":   5_000_000,       # 第1年預設 500 萬
+    "y2_cv":  14_000_000,       # 第2年預設 1,400 萬
+    "y3_cv":  24_000_000,       # 第3年預設 2,400 萬
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -79,6 +79,7 @@ def _on_prem_change():
     p = int(st.session_state.y1_prem)
     st.session_state.y2_prem = p
     st.session_state.y3_prem = p
+    # 一旦改動年繳保費，依你的規則，清空 1~3 年保價金，請用戶自行輸入
     st.session_state.y1_cv = 0
     st.session_state.y2_cv = 0
     st.session_state.y3_cv = 0
@@ -87,7 +88,7 @@ def _on_prem_change():
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
-with st.expander("規劃摘要", expanded=True):
+with st.expander("規劃摘要（說明）", expanded=True):
     st.markdown(
         """
 - 規劃設定：要保人第一代 → 變更為第二代；被保人第二代；受益人第三代。  
@@ -107,7 +108,7 @@ st.number_input(
     help="預設 10,000,000（1,000 萬）。如改動，系統會把第 1～3 年保價金清空為 0，請自行輸入。"
 )
 
-# 2) 第幾年變更要保人（在後）
+# 2) 第幾年變更要保人（在後；1～3 年）
 st.selectbox(
     "第幾年變更要保人（交棒）",
     options=[1, 2, 3],
@@ -124,6 +125,7 @@ max_y2 = p * 2
 max_y3 = p * 3
 
 st.subheader("前三年保價金（年末現金價值）")
+# （依你的新要求：不顯示「限制：第1年…」那行提示文字）
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -222,8 +224,8 @@ with st.expander("年度明細與逐年稅額（1～3 年）", expanded=False):
         show_no[c] = show_no[c].map(fmt_y)
     st.dataframe(show_no, use_container_width=True, hide_index=True)
 
-# ---------------- 顧問話術 ----------------
-with st.expander("一鍵生成｜顧問講解話術（複製貼上）", expanded=False):
+# ---------------- 規劃摘要（原：一鍵生成｜顧問講解話術） ----------------
+with st.expander("規劃摘要", expanded=False):
     lines = [
         f"以同樣的現金流，若在第 {change_year} 年變更要保人，當年度以保單價值準備金認列贈與 {fmt_y(gift_with_policy)}。",
         f"若改以現金逐年贈與至第 {change_year} 年，累計贈與稅約 {fmt_y(total_tax_no_policy)}；採保單規劃同年度稅額約 {fmt_y(tax_with_policy)}。",
