@@ -15,15 +15,21 @@ RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
-# ---------------- 初始化 Session State（僅用 State 設定預設；避免 value= 再指定） ----------------
+# ---------------- 初始化 Session State ----------------
 DEFAULTS = {
+    # 基本模式（預設第 1 年變更）
     "years_input": 8,            # 年期（年）
     "annual_input": 10_000_000,  # 每年投入（元）
-    "change_input": 1,           # 預設第 1 年變更要保人
-    # 自訂前三年切換與欄位（預設關閉；保費預設=annual、現價依比率）
+    "change_input": 1,           # 第幾年變更要保人
+
+    # 進階：自訂前三年（預設關閉）
     "custom_first3_enabled": False,
     "y1_prem": 10_000_000, "y2_prem": 10_000_000, "y3_prem": 10_000_000,
-    "y1_cv": 5_000_000, "y2_cv": 14_000_000, "y3_cv": 24_000_000,
+    "y1_cv": 5_000_000,   "y2_cv": 14_000_000,  "y3_cv": 24_000_000,
+
+    # 自訂模式下專用欄位：總年期與第4年起每年投入
+    "years_custom": 8,
+    "post3_annual": 10_000_000,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -76,18 +82,13 @@ def card(label: str, value: str, note: str = ""):
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def fmt(n: float) -> str:
-    return f"{n:,.0f}"
-
-def fmt_y(n: float) -> str:
-    return f"{fmt(n)} 元"
+def fmt(n: float) -> str: return f"{n:,.0f}"
+def fmt_y(n: float) -> str: return f"{fmt(n)} 元"
 
 def gift_tax(net: int):
     """依累進稅率計算單年贈與稅（含基稅）。回傳 (稅額, 稅率字串)"""
-    if net <= 0:
-        return 0, "—"
-    if net <= BR10_NET_MAX:
-        return int(round(net * RATE_10)), "10%"
+    if net <= 0: return 0, "—"
+    if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
         base = BR10_NET_MAX * RATE_10
         extra = (net - BR10_NET_MAX) * RATE_15
@@ -111,19 +112,29 @@ with st.expander("規劃摘要", expanded=True):
 '''
     )
 
-# ---------------- 三個基本輸入 ----------------
+# ---------------- 進階切換：自訂前三年 ----------------
+st.write("")  # 空行
+st.markdown("**進階：自訂前三年保費與年末現金價值**（可選）")
+st.toggle(
+    "自訂前三年", key="custom_first3_enabled",
+    help="開啟後可手動輸入第 1～3 年保費與年末保單現金價值；其餘年度採『第4年起每年投入』＋預設比率推估。"
+)
+
+# ---------------- 三個基本輸入（可依自訂狀態灰化） ----------------
 col1, col2, col3 = st.columns(3)
 with col1:
     st.number_input(
         "年期（年）", min_value=1, max_value=40, step=1,
         key="years_input",
-        help="保單繳費年期或試算年期"
+        disabled=st.session_state.custom_first3_enabled,  # 自訂開啟時灰化
+        help="保單繳費年期或試算年期（啟用自訂前三年後，請於下方輸入『總年期』）"
     )
 with col2:
     st.number_input(
         "每年投入現金（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d",
         key="annual_input",
-        help="單一贈與人每年以現金投入之金額（上限 1 億）"
+        disabled=st.session_state.custom_first3_enabled,  # 自訂開啟時灰化
+        help="上限 1 億（啟用自訂前三年後，此欄位不再使用，改填『第4年起每年投入』）"
     )
 with col3:
     st.number_input(
@@ -132,25 +143,19 @@ with col3:
         help="在此年度以前由第一代繳費，該年度辦理要保人變更"
     )
 
-years       = int(st.session_state.years_input)
-annual      = int(st.session_state.annual_input)
-change_year = int(st.session_state.change_input)
-
-# ---------------- 自訂前三年按鈕 + 輸入區 ----------------
-st.write("")  # 空行
-st.markdown("**進階：自訂前三年保費與年末現金價值**（可選）")
-st.toggle("自訂前三年", key="custom_first3_enabled", help="開啟後可手動輸入第 1～3 年保費與年末保單現金價值；其餘年度依上方每年投入與比率推估。")
-
-# 若第一次載入，依 anual 與比率動態更新預設值（避免你每次重填）
+# 當自訂關閉時，自動以目前 annual 建議前三年現價（僅在關閉狀態更新，避免覆蓋手填）
 if not st.session_state.custom_first3_enabled:
-    # 當使用者切回關閉時，依目前 annual 自動更新建議預設，僅在關閉狀態下刷新，不干擾已手填的值
-    st.session_state.y1_prem = annual
-    st.session_state.y2_prem = annual
-    st.session_state.y3_prem = annual
-    st.session_state.y1_cv = int(round(annual * RATIO_MAP.get(1, 0.95)))
-    st.session_state.y2_cv = int(round((annual*2) * RATIO_MAP.get(2, 0.95)))
-    st.session_state.y3_cv = int(round((annual*3) * RATIO_MAP.get(3, 0.95)))
+    annual_tmp = int(st.session_state.annual_input)
+    st.session_state.y1_prem = annual_tmp
+    st.session_state.y2_prem = annual_tmp
+    st.session_state.y3_prem = annual_tmp
+    st.session_state.y1_cv = int(round(annual_tmp * RATIO_MAP.get(1, 0.95)))
+    st.session_state.y2_cv = int(round((annual_tmp*2) * RATIO_MAP.get(2, 0.95)))
+    st.session_state.y3_cv = int(round((annual_tmp*3) * RATIO_MAP.get(3, 0.95)))
+    st.session_state.years_custom = int(st.session_state.years_input)
+    st.session_state.post3_annual = int(st.session_state.annual_input)
 
+# 自訂區塊（開啟時顯示）
 if st.session_state.custom_first3_enabled:
     c1, c2, c3, c4 = st.columns([1,1,1,1])
     with c1:
@@ -163,38 +168,51 @@ if st.session_state.custom_first3_enabled:
         st.number_input("第 3 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y3_prem")
         st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
     with c4:
-        st.info("提示：前三年「保費」會用於『現金贈與』逐年課稅；前三年「年末現金價值」將覆寫預設比率，用於第 N 年變更時的稅務認列。")
+        st.number_input("總年期（含前三年）", min_value=3, max_value=40, step=1, key="years_custom")
+        st.number_input("第 4 年起每年投入（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="post3_annual")
+        st.info("前三年採上方自訂數值；第 4 年起套用本欄位金額與預設年末現金價值比率。")
+
+# 讀取使用者輸入（依模式切換）
+if st.session_state.custom_first3_enabled:
+    years = int(st.session_state.years_custom)
+    annual_for_post3 = int(st.session_state.post3_annual)
+else:
+    years = int(st.session_state.years_input)
+    annual_for_post3 = int(st.session_state.annual_input)
+
+change_year = int(st.session_state.change_input)
 
 # ---------------- 基本校驗與自動校正 ----------------
-if annual > MAX_ANNUAL:
-    st.error("每年投入金額不可超過 1 億元。")
-    st.stop()
+if annual_for_post3 > MAX_ANNUAL:
+    st.error("每年投入金額不可超過 1 億元。"); st.stop()
 if change_year > years:
     st.warning("變更年份不可晚於年期，已自動校正為年期。")
     change_year = years
     st.session_state.change_input = years  # 回寫界面
 
-# ---------------- 生成年度序列（套用前三年自訂值） ----------------
-def build_schedule(years: int, annual_default: int):
+# ---------------- 生成年度序列（套用自訂前三年 / 其後用 post3_annual） ----------------
+def build_schedule(years_total: int, annual_default_after3: int):
     rows = []
     cum = 0
-    for y in range(1, years+1):
-        # 決定當年保費
+    for y in range(1, years_total+1):
+        # 年度保費
         if st.session_state.custom_first3_enabled and y <= 3:
             premium = int([st.session_state.y1_prem, st.session_state.y2_prem, st.session_state.y3_prem][y-1])
         else:
-            premium = annual_default
+            premium = annual_default_after3
         cum += premium
-        # 決定年末現金價值
+
+        # 年末現金價值
         if st.session_state.custom_first3_enabled and y <= 3:
             cv = int([st.session_state.y1_cv, st.session_state.y2_cv, st.session_state.y3_cv][y-1])
         else:
             ratio = RATIO_MAP.get(y, 0.95)
             cv = int(round(cum * ratio))
+
         rows.append({"年度": y, "每年投入（元）": premium, "累計投入（元）": cum, "年末現金價值（元）": cv})
     return pd.DataFrame(rows)
 
-df_years = build_schedule(years, annual)
+df_years = build_schedule(years, annual_for_post3)
 
 # ---------------- 稅務與金額（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
@@ -229,7 +247,7 @@ st.markdown(
     f"""
 <div class="section small">
 <span class="tag">保單規劃</span>
-於第 <b>{change_year}</b> 年完成要保人變更，當年度以 <b>保單價值準備金</b> 認列贈與（可自訂前三年現金價值；其後依比率推估）。<br>
+於第 <b>{change_year}</b> 年完成要保人變更，當年度以 <b>保單價值準備金</b> 認列贈與（可自訂前 3 年現金價值；其後依比率推估）。<br>
 <span class="tag">現金贈與</span>
 需於第 <b>1～{change_year}</b> 年逐年以 <b>當年實際投入金額</b> 完成移轉，各年分別課稅。
 </div>
@@ -259,7 +277,7 @@ with colC:
 # ---------------- 明細（預設收合；索引隱藏） ----------------
 st.write("")  # 空行
 with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False):
-    st.markdown("**年度現金價值（自訂前三年／後續依比率推估）**")
+    st.markdown("**年度現金價值（自訂前三年／其後依比率推估）**")
     st.dataframe(
         df_years.assign(
             **{
