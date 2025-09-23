@@ -117,70 +117,62 @@ st.write("")  # 空行
 st.markdown("**進階：自訂前三年保費與年末現金價值**（可選）")
 st.toggle(
     "自訂前三年", key="custom_first3_enabled",
-    help="開啟後可手動輸入第 1～3 年保費與年末保單現金價值；其餘年度採『第4年起每年投入』＋預設比率推估。"
+    help="開啟後會隱藏上方的『年期／每年投入現金』，改以『總年期／第4年起每年投入』與前三年自訂數值推估其後。"
 )
 
-# ---------------- 三個基本輸入（可依自訂狀態灰化） ----------------
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.number_input(
-        "年期（年）", min_value=1, max_value=40, step=1,
-        key="years_input",
-        disabled=st.session_state.custom_first3_enabled,  # 自訂開啟時灰化
-        help="保單繳費年期或試算年期（啟用自訂前三年後，請於下方輸入『總年期』）"
-    )
-with col2:
-    st.number_input(
-        "每年投入現金（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d",
-        key="annual_input",
-        disabled=st.session_state.custom_first3_enabled,  # 自訂開啟時灰化
-        help="上限 1 億（啟用自訂前三年後，此欄位不再使用，改填『第4年起每年投入』）"
-    )
-with col3:
+# ---------------- 輸入區（依模式切換顯示） ----------------
+# 共同欄位：第幾年變更要保人（永遠顯示）
+col_change = st.columns(3)[2]  # 右側欄位
+with col_change:
     st.number_input(
         "第幾年變更要保人（交棒）", min_value=1, max_value=40, step=1,
         key="change_input",
         help="在此年度以前由第一代繳費，該年度辦理要保人變更"
     )
 
-# 當自訂關閉時，自動以目前 annual 建議前三年現價（僅在關閉狀態更新，避免覆蓋手填）
 if not st.session_state.custom_first3_enabled:
-    annual_tmp = int(st.session_state.annual_input)
-    st.session_state.y1_prem = annual_tmp
-    st.session_state.y2_prem = annual_tmp
-    st.session_state.y3_prem = annual_tmp
-    st.session_state.y1_cv = int(round(annual_tmp * RATIO_MAP.get(1, 0.95)))
-    st.session_state.y2_cv = int(round((annual_tmp*2) * RATIO_MAP.get(2, 0.95)))
-    st.session_state.y3_cv = int(round((annual_tmp*3) * RATIO_MAP.get(3, 0.95)))
-    st.session_state.years_custom = int(st.session_state.years_input)
-    st.session_state.post3_annual = int(st.session_state.annual_input)
-
-# 自訂區塊（開啟時顯示）
-if st.session_state.custom_first3_enabled:
-    c1, c2, c3, c4 = st.columns([1,1,1,1])
+    # 基本模式：顯示原本年期＋每年投入
+    col1, col2 = st.columns(2)
+    with col1:
+        st.number_input(
+            "年期（年）", min_value=1, max_value=40, step=1,
+            key="years_input",
+            help="保單繳費年期或試算年期"
+        )
+    with col2:
+        st.number_input(
+            "每年投入現金（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d",
+            key="annual_input",
+            help="單一贈與人每年以現金投入之金額（上限 1 億）"
+        )
+else:
+    # 自訂模式：隱藏上方年期／每年投入，改顯示總年期與第4年起每年投入＋前三年自訂
+    c1, c2 = st.columns(2)
     with c1:
+        st.number_input("總年期（含前三年）", min_value=3, max_value=40, step=1, key="years_custom")
+    with c2:
+        st.number_input("第 4 年起每年投入（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="post3_annual")
+    st.write("")  # 空行
+    cc1, cc2, cc3 = st.columns(3)
+    with cc1:
         st.number_input("第 1 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y1_prem")
         st.number_input("第 1 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y1_cv")
-    with c2:
+    with cc2:
         st.number_input("第 2 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y2_prem")
         st.number_input("第 2 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y2_cv")
-    with c3:
+    with cc3:
         st.number_input("第 3 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y3_prem")
         st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
-    with c4:
-        st.number_input("總年期（含前三年）", min_value=3, max_value=40, step=1, key="years_custom")
-        st.number_input("第 4 年起每年投入（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="post3_annual")
-        st.info("前三年採上方自訂數值；第 4 年起套用本欄位金額與預設年末現金價值比率。")
+    st.info("前三年採上方自訂數值；第 4 年起套用本欄位金額與預設年末現金價值比率。")
 
-# 讀取使用者輸入（依模式切換）
-if st.session_state.custom_first3_enabled:
-    years = int(st.session_state.years_custom)
-    annual_for_post3 = int(st.session_state.post3_annual)
-else:
+# 讀取輸入（依模式）
+change_year = int(st.session_state.change_input)
+if not st.session_state.custom_first3_enabled:
     years = int(st.session_state.years_input)
     annual_for_post3 = int(st.session_state.annual_input)
-
-change_year = int(st.session_state.change_input)
+else:
+    years = int(st.session_state.years_custom)
+    annual_for_post3 = int(st.session_state.post3_annual)
 
 # ---------------- 基本校驗與自動校正 ----------------
 if annual_for_post3 > MAX_ANNUAL:
@@ -190,7 +182,7 @@ if change_year > years:
     change_year = years
     st.session_state.change_input = years  # 回寫界面
 
-# ---------------- 生成年度序列（套用自訂前三年 / 其後用 post3_annual） ----------------
+# ---------------- 生成年度序列（套用自訂前三年 / 其後用 post3_annual 或 annual_input） ----------------
 def build_schedule(years_total: int, annual_default_after3: int):
     rows = []
     cum = 0
