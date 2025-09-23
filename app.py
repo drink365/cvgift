@@ -16,25 +16,24 @@ MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
 DEFAULTS = {
-    "years_total": 8,      # 總年期
-    "change_year": 1,      # 第幾年變更要保人（交棒）
+    "change_year": 1,           # 第幾年變更要保人（交棒）
 
     # 前三年保費（必須一致；以 y1_prem 為主）
-    "y1_prem": 10_000_000, # 預設 1,000 萬
+    "y1_prem": 10_000_000,      # 預設 1,000 萬
     "y2_prem": 10_000_000,
     "y3_prem": 10_000_000,
 
     # 前三年年末現金價值（可覆寫；預設依 50%/70%/80% of 累計保費）
-    "y1_cv":   5_000_000,  # = 10,000,000 * 0.50
-    "y2_cv":  14_000_000,  # = 20,000,000 * 0.70
-    "y3_cv":  24_000_000,  # = 30,000,000 * 0.80
+    "y1_cv":   5_000_000,       # = 10,000,000 * 0.50
+    "y2_cv":  14_000_000,       # = 20,000,000 * 0.70
+    "y3_cv":  24_000_000,       # = 30,000,000 * 0.80
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# 年末現金價值預設比率（可依商品微調）
-RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
+# 年末現金價值預設比率（可依商品微調；延伸到第 10 年）
+RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95, 9:0.97, 10:0.98}
 
 # ---------------- 樣式 ----------------
 st.markdown(
@@ -99,15 +98,15 @@ with st.expander("規劃摘要", expanded=True):
     )
 
 # ---------------- 參數輸入 ----------------
-top1, top2 = st.columns(2)
-with top1:
-    st.number_input("總年期（年）", min_value=3, max_value=40, step=1, key="years_total")
-with top2:
-    st.number_input("第幾年變更要保人（交棒）", min_value=1, max_value=40, step=1, key="change_year")
+st.number_input(
+    "第幾年變更要保人（交棒）",
+    min_value=1, max_value=10, step=1, key="change_year",
+    help="在此年度以前由第一代繳費，該年度辦理要保人變更（上限第 10 年）"
+)
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
-st.subheader("前三年：保費需一致；保價金可覆寫")
+st.subheader("請輸入前三年保費及保價金")
 c1, c2, c3 = st.columns(3)
 with c1:
     st.number_input("第 1 年保費（元）", min_value=0, max_value=MAX_ANNUAL,
@@ -115,12 +114,14 @@ with c1:
     st.number_input("第 1 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y1_cv")
 with c2:
     st.number_input("第 2 年保費（元）", value=st.session_state.y2_prem,
-                    min_value=0, max_value=MAX_ANNUAL, step=0, format="%d", key="y2_prem_display", disabled=True)
+                    min_value=0, max_value=MAX_ANNUAL, step=0, format="%d",
+                    key="y2_prem_display", disabled=True)
     st.caption("＊第 2 年保費自動等於第 1 年保費")
     st.number_input("第 2 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y2_cv")
 with c3:
     st.number_input("第 3 年保費（元）", value=st.session_state.y3_prem,
-                    min_value=0, max_value=MAX_ANNUAL, step=0, format="%d", key="y3_prem_display", disabled=True)
+                    min_value=0, max_value=MAX_ANNUAL, step=0, format="%d",
+                    key="y3_prem_display", disabled=True)
     st.caption("＊第 3 年保費自動等於第 1 年保費")
     st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
 
@@ -128,19 +129,18 @@ with c3:
 st.session_state.y2_prem = st.session_state.y1_prem
 st.session_state.y3_prem = st.session_state.y1_prem
 
-# ---------------- 基本校驗 ----------------
-years = int(st.session_state.years_total)
+# ---------------- 年期推導與校正 ----------------
 change_year = int(st.session_state.change_year)
-# 只在本地校正，不回寫 widget 的 session_state，避免 Streamlit 錯誤
-change_year = min(change_year, years)
+# 年期自動決定：至少到第 8 年；若變更年 > 8，就延伸到該年（最多 10）
+years = max(8, min(change_year, 10))
 
-# ---------------- 生成年度序列（第4年起保費=第1年保費） ----------------
+# ---------------- 生成年度序列（第 4 年起保費 = 第 1 年保費） ----------------
 def build_schedule(years_total: int):
     rows, cum = [], 0
     p1 = int(st.session_state.y1_prem)
     for y in range(1, years_total+1):
-        # 保費
-        premium = p1  # 前三年與第 4 年起皆為第 1 年保費
+        # 保費（第 1 年起每年相同）
+        premium = p1
         cum += premium
 
         # 年末現金價值
@@ -151,7 +151,7 @@ def build_schedule(years_total: int):
         elif y == 3:
             cv = int(st.session_state.y3_cv)
         else:
-            ratio = RATIO_MAP.get(y, 0.95)
+            ratio = RATIO_MAP.get(y, RATIO_MAP[max(RATIO_MAP.keys())])
             cv = int(round(cum * ratio))
 
         rows.append({"年度": y, "每年投入（元）": premium, "累計投入（元）": cum, "年末現金價值（元）": cv})
@@ -159,7 +159,13 @@ def build_schedule(years_total: int):
 
 df_years = build_schedule(years)
 
-# ---------------- 稅務與金額（算到第 change_year 年） ----------------
+# ---------------- 稅務與金額（算到第 change_year 年；若 change_year>years 也能覆蓋） ----------------
+# 確保 DataFrame 涵蓋變更年
+if change_year > years:
+    # 追加到變更年
+    df_years = build_schedule(change_year)
+    years = change_year
+
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
 nominal_transfer_to_N = int(df_years.loc[df_years["年度"] <= change_year, "每年投入（元）"].sum())
 
