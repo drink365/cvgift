@@ -23,10 +23,13 @@ DEFAULTS = {
     "y2_prem": 10_000_000,
     "y3_prem": 10_000_000,
 
-    # 前三年年末現金價值（可覆寫；預設依 50%/70%/80% of 累計保費）
-    "y1_cv":   5_000_000,       # = 10,000,000 * 0.50
-    "y2_cv":  14_000_000,       # = 20,000,000 * 0.70
-    "y3_cv":  24_000_000,       # = 30,000,000 * 0.80
+    # 前三年年末現金價值（可覆寫）
+    "y1_cv":   5_000_000,       # 先放預設值；可被清空或覆寫
+    "y2_cv":  14_000_000,
+    "y3_cv":  24_000_000,
+
+    # 預設模式：改保費時清空保價，改由用戶自行輸入
+    "clear_cv_mode": True,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -63,7 +66,7 @@ def card(label: str, value: str, note: str = ""):
 def fmt(n: float) -> str: return f"{n:,.0f}"
 def fmt_y(n: float) -> str: return f"{fmt(n)} 元"
 
-def gift_tax(net: int):
+def tax_and_rate(net:int):
     if net <= 0: return 0, "—"
     if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
@@ -74,11 +77,26 @@ def gift_tax(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# --- 第 1 年保費改動時：同步第 2、3 年保費；按 50/70/80% 重算前三年現價 ---
+# --- 行為：改第 1 年保費時 ---
 def _sync_from_y1():
+    """當第 1 年保費被修改：同步第 2、3 年保費；依模式決定保價是清空或帶入比率。"""
     p = int(st.session_state.y1_prem)
     st.session_state.y2_prem = p
     st.session_state.y3_prem = p
+    if st.session_state.get("clear_cv_mode", True):
+        # 清空：改由用戶依商品試算書自行輸入
+        st.session_state.y1_cv = 0
+        st.session_state.y2_cv = 0
+        st.session_state.y3_cv = 0
+    else:
+        # 依預設比率帶入（50%/70%/80%）
+        st.session_state.y1_cv = int(round(p * RATIO_MAP[1]))
+        st.session_state.y2_cv = int(round(p * 2 * RATIO_MAP[2]))
+        st.session_state.y3_cv = int(round(p * 3 * RATIO_MAP[3]))
+
+def _fill_default_cv():
+    """一鍵帶入預設 50/70/80%"""
+    p = int(st.session_state.y1_prem)
     st.session_state.y1_cv = int(round(p * RATIO_MAP[1]))
     st.session_state.y2_cv = int(round(p * 2 * RATIO_MAP[2]))
     st.session_state.y3_cv = int(round(p * 3 * RATIO_MAP[3]))
@@ -105,6 +123,15 @@ st.number_input(
 )
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
+
+# 模式切換：改保費時是否清空保價（預設：清空，由用戶自行輸入保價）
+st.checkbox("變更保費時，自行輸入保價（清空年末現金價值）", key="clear_cv_mode", value=st.session_state.clear_cv_mode)
+btn_col1, btn_col2 = st.columns([1,6])
+with btn_col1:
+    if st.button("一鍵帶入預設 50/70/80%"):
+        _fill_default_cv()
+with btn_col2:
+    st.caption("＊若您已有商品試算書，建議採用「清空後自行輸入保價」。")
 
 st.subheader("請輸入前三年保費及保價金")
 c1, c2, c3 = st.columns(3)
@@ -167,7 +194,7 @@ nominal_transfer_to_N = int(df_years.loc[df_years["年度"] <= change_year, "每
 gift_with_policy = cv_at_change
 net_with_policy  = max(0, gift_with_policy - EXEMPTION)
 
-def tax_and_rate(net:int):
+def tax_calc(net:int):
     if net <= 0: return 0, "—"
     if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
@@ -178,13 +205,13 @@ def tax_and_rate(net:int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-tax_with_policy, rate_with = tax_and_rate(net_with_policy)
+tax_with_policy, rate_with = tax_calc(net_with_policy)
 
 total_tax_no_policy, yearly_tax_list = 0, []
 for _, r in df_years[df_years["年度"] <= change_year].iterrows():
     annual_i = int(r["每年投入（元）"])
     net = max(0, annual_i - EXEMPTION)
-    t, rate = tax_and_rate(net)
+    t, rate = tax_calc(net)
     total_tax_no_policy += t
     yearly_tax_list.append({
         "年度": int(r["年度"]),
@@ -233,34 +260,38 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
         show_no[c] = show_no[c].map(fmt_y)
     st.dataframe(show_no, use_container_width=True, hide_index=True)
 
-# ---------------- 贈與完成後：可達成之效果（整合版，動態數據） ----------------
+# ---------------- 贈與完成後：可達成之效果（保留你的話術，數據動態套用） ----------------
 st.subheader("贈與完成後：可達成之效果")
 st.markdown(
     f"""
-1️⃣ **降低應稅資產**  
-以第 **{change_year}** 年變更為例：第一代於該年度按**保單價值準備金**認列贈與，金額約 **{fmt_y(gift_with_policy)}**。  
-相較相同期間僅以現金逐年贈與，累計稅負約 **{fmt_y(total_tax_no_policy)}**；本規劃當年稅額約 **{fmt_y(tax_with_policy)}**，**節省稅負**（至第 {change_year} 年）約 **{fmt_y(tax_saving)}**。
+**保單規劃**
 
-2️⃣ **壓縮一代資產集中度**  
-以**變更要保人**為交棒時點，讓資產控制權自一代平滑過渡至二代，降低單一名下過度集中，強化整體資產韌性。
+1️⃣ **降低應稅資產**  
+透過保單設計，可有效降低第一代應稅資產 **{fmt_y(gift_with_policy)}**（以第 {change_year} 年保單價值準備金為準），達到節稅效果。
+
+2️⃣ **壓縮一代資產**  
+透過變更要保人方式，靈活規劃資產歸屬，避免資產過度集中在一代名下。
 
 3️⃣ **預留二代稅源**  
-保單之**身故保險金**可預先作為**稅源預備金**，緩衝未來遺產稅／贈與稅繳納壓力，避免被迫處分核心資產。
+保單身故保險金可作為稅源預備金，避免後代因繳稅問題被迫處分資產。
 
 4️⃣ **資產放大效果**  
-至第 **{change_year}** 年名目累積投入約 **{fmt_y(nominal_transfer_to_N)}**；同年認列贈與金額為 **{fmt_y(gift_with_policy)}**。未來於約定事故發生時，保險給付可**放大為保額**（依商品與核保條件），優於現金「1 元=1 元」的靜態效果。
+存在銀行，一塊錢就是一塊錢；但放進保單，可透過身價保障產生倍數效果。  
+（至第 {change_year} 年名目累積投入 **{fmt_y(nominal_transfer_to_N)}**，同年認列贈與 **{fmt_y(gift_with_policy)}**。）
 
 5️⃣ **資產公平調控**  
-不同於法定繼承的平均分配，保單可**指定受益人與比例**，對資產差距較大的子女進行**差額補強**，更貼近家族治理意圖。
+銀行存款依民法須平均分配，但保單受益人可彈性規劃，對資產差異較大的子女，能做差額補強。
 
-6️⃣ **定向傳承**  
-可精準指定受益對象、比例與條件，並可搭配信託／保全條款，將資金**標示用途**（如教育金、創業金、長照金），確保款項用在該用之處。
+6️⃣ **指定受益分配**  
+保單具備指定受益人的彈性，能精準落實傳承意圖。
 
-7️⃣ **遺產外即時現金**  
-保險金通常可作為**遺產外之即時現金**（以保單條款與法規為準），受益人可**迅速取得**，有效緩解短期週轉與稅務繳納需求。
+7️⃣ **遺產外快現金**  
+保險金屬於遺產外的即時現金，繼承人可快速取得，緩解資金需求。
 
 8️⃣ **分期給付的靈活性**  
-可透過**類信託機制**（例如保單受益給付分期／分段條件設定），達成**分期與控管**的給付節奏；在多數情境下較「另設信託」更具**成本效益**，同時維持贈與目的與秩序。
+保單可透過類信託的方式進行分期給付，不僅能保障資產分配的秩序，還能避免額外的信託管理費用，更具成本效益。
+
+— 另外：以現金逐年贈與至第 {change_year} 年，累計贈與稅約 **{fmt_y(total_tax_no_policy)}**；採保單規劃同年度稅額約 **{fmt_y(tax_with_policy)}**，**節省稅負**約 **{fmt_y(tax_saving)}**。
 """
 )
 
