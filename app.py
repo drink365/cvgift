@@ -8,9 +8,9 @@ import streamlit as st
 st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="wide")
 
 # ---------------- 稅制常數（114年/2025） ----------------
-EXEMPTION    = 2_440,000   # 年免稅額（單一贈與人）
-BR10_NET_MAX = 28_110,000  # 10% 淨額上限
-BR15_NET_MAX = 56_210,000  # 15% 淨額上限
+EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
+BR10_NET_MAX = 28_110_000  # 10% 淨額上限
+BR15_NET_MAX = 56_210_000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
@@ -142,10 +142,10 @@ def build_schedule(years_total: int):
     p1 = int(st.session_state.y1_prem)
     for y in range(1, years_total+1):
         # 保費
-        if y == 1: premium = p1
-        elif y == 2: premium = p1
-        elif y == 3: premium = p1
-        else: premium = p1  # 第 4 年起沿用第 1 年保費
+        if y in (1, 2, 3):
+            premium = p1
+        else:
+            premium = p1  # 第 4 年起沿用第 1 年保費
         cum += premium
 
         # 年末現金價值
