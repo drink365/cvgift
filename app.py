@@ -17,18 +17,20 @@ MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
 DEFAULTS = {
-    # 基本模式（預設第 1 年變更）
-    "years_input": 8,            # 年期（年）
-    "annual_input": 10_000_000,  # 每年投入（元）
-    "change_input": 1,           # 第幾年變更要保人
+    "years_total": 8,         # 總年期
+    "change_year": 1,         # 第幾年變更要保人（交棒）
 
-    # 進階：自訂前三年（預設關閉）
-    "custom_first3_enabled": False,
-    "y1_prem": 10_000_000, "y2_prem": 10_000_000, "y3_prem": 10_000_000,
-    "y1_cv": 5_000_000,   "y2_cv": 14_000_000,  "y3_cv": 24_000_000,
+    # 前三年保費（必須一致；以 y1_prem 為主）
+    "y1_prem": 10_000_000,    # 預設 1,000 萬
+    "y2_prem": 10_000_000,
+    "y3_prem": 10_000_000,
 
-    # 自訂模式下專用欄位：總年期與第4年起每年投入
-    "years_custom": 8,
+    # 前三年年末現金價值（可覆寫；預設依 50%/70%/80% of 累計保費）
+    "y1_cv":   5_000_000,     # = 10,000,000 * 0.50
+    "y2_cv":  14_000_000,     # = 20,000,000 * 0.70
+    "y3_cv":  24_000_000,     # = 30,000,000 * 0.80
+
+    # 第四年起的每年投入（預設 = 第 1 年保費）
     "post3_annual": 10_000_000,
 }
 for k, v in DEFAULTS.items():
@@ -38,39 +40,28 @@ for k, v in DEFAULTS.items():
 # 年末現金價值預設比率（可依商品微調）
 RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 
-# ---------------- 樣式（含寬版容器、KPI 卡、提示） ----------------
+# ---------------- 樣式 ----------------
 st.markdown(
     """
 <style>
 :root {
   --ink:#0f172a; --sub:#475569; --line:#E6E8EF; --bg:#FAFBFD;
-  --gold:#C8A96A; --gold-ink:#3f3a2a; --emerald:#059669;
+  --gold:#C8A96A; --emerald:#059669;
 }
 .block-container { max-width:1320px; padding-top:1rem; padding-bottom:2rem; }
-html, body, [class*="css"] { color:var(--ink); }
-h1,h2,h3{ color:var(--ink)!important; letter-spacing:.3px; }
 hr.custom{ border:none; border-top:1px solid var(--line); margin:12px 0 6px; }
 .small{ color:var(--sub); font-size:.95rem; line-height:1.6; }
-
-/* KPI 卡 */
 .kpi{ border:1px solid var(--line); border-left:5px solid var(--gold);
   border-radius:12px; padding:14px 16px; background:#fff;
   box-shadow:0 1px 2px rgba(10,22,70,.04);}
 .kpi .label{ color:var(--sub); font-size:.95rem; margin-bottom:6px;}
 .kpi .value{ font-weight:700; font-variant-numeric:tabular-nums; font-size:1.05rem; }
 .kpi .note{ color:var(--emerald); font-size:.9rem; margin-top:4px; }
-
-/* 標籤與區塊 */
-.tag{ display:inline-block; padding:2px 8px; border:1px solid var(--line);
-  border-radius:999px; font-size:.82rem; color:var(--sub); background:#fff; margin-right:8px; }
 .section{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; }
-
-/* 頁尾聲明 */
 .footer-note{
   margin-top:18px; padding:14px 16px; border:1px dashed var(--line);
   background:#fff; border-radius:12px; color:#334155; font-size:.92rem;
 }
-.footer-note b{ color:#111827; }
 </style>
 """,
     unsafe_allow_html=True
@@ -97,106 +88,98 @@ def gift_tax(net: int):
     extra = (net - BR15_NET_MAX) * RATE_20
     return int(round(base + extra)), "20%"
 
-# ---------------- 標題 ----------------
+# --- 當第 1 年保費被修改：同步第 2、3 年保費；按 50/70/80% 重算前三年現價 ---
+def _sync_from_y1():
+    p = int(st.session_state.y1_prem)
+    st.session_state.y2_prem = p
+    st.session_state.y3_prem = p
+    # 依累計保費 × 比率（50%/70%/80%）
+    st.session_state.y1_cv = int(round(p * RATIO_MAP[1]))
+    st.session_state.y2_cv = int(round(p * 2 * RATIO_MAP[2]))
+    st.session_state.y3_cv = int(round(p * 3 * RATIO_MAP[3]))
+    # 第四年起預設也跟著走（可再手動調整）
+    st.session_state.post3_annual = p
+
+# ---------------- 標題與摘要 ----------------
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
 st.caption("單位：新台幣。稅制假設（114年/2025）：年免稅 2,440,000；10% 淨額上限 28,110,000；15% 淨額上限 56,210,000。")
 
-# ---------------- 規劃摘要（預設展開） ----------------
 with st.expander("規劃摘要", expanded=True):
     st.markdown(
-        '''
+        """
 - 規劃設定：要保人第一代 → 變更為第二代；被保人第二代；受益人第三代。  
 - 保單規劃：於變更要保人年度，以當時**保單價值準備金**認列贈與。  
 - 現金贈與：以現金達成同額移轉，逐年課稅。  
 - 本試算僅比較**變更當年之前**之稅負差；變更後不再由第一代繳費。
-'''
+        """
     )
 
-# ---------------- 進階切換：自訂前三年 ----------------
-st.write("")  # 空行
-st.markdown("**進階：自訂前三年保費與年末現金價值**（可選）")
-st.toggle(
-    "自訂前三年", key="custom_first3_enabled",
-    help="開啟後會隱藏上方的『年期／每年投入現金』，改以『總年期／第4年起每年投入』與前三年自訂數值推估其後。"
-)
+# ---------------- 參數輸入 ----------------
+top1, top2, top3 = st.columns(3)
+with top1:
+    st.number_input("總年期（年）", min_value=3, max_value=40, step=1, key="years_total")
+with top2:
+    st.number_input("第幾年變更要保人（交棒）", min_value=1, max_value=40, step=1, key="change_year")
+with top3:
+    st.number_input("第 4 年起每年投入（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="post3_annual")
 
-# ---------------- 輸入區（依模式切換顯示） ----------------
-# 共同欄位：第幾年變更要保人（永遠顯示）
-col_change = st.columns(3)[2]  # 右側欄位
-with col_change:
-    st.number_input(
-        "第幾年變更要保人（交棒）", min_value=1, max_value=40, step=1,
-        key="change_input",
-        help="在此年度以前由第一代繳費，該年度辦理要保人變更"
-    )
+st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
-if not st.session_state.custom_first3_enabled:
-    # 基本模式：顯示原本年期＋每年投入
-    col1, col2 = st.columns(2)
-    with col1:
-        st.number_input(
-            "年期（年）", min_value=1, max_value=40, step=1,
-            key="years_input",
-            help="保單繳費年期或試算年期"
-        )
-    with col2:
-        st.number_input(
-            "每年投入現金（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d",
-            key="annual_input",
-            help="單一贈與人每年以現金投入之金額（上限 1 億）"
-        )
-else:
-    # 自訂模式：隱藏上方年期／每年投入，改顯示總年期與第4年起每年投入＋前三年自訂
-    c1, c2 = st.columns(2)
-    with c1:
-        st.number_input("總年期（含前三年）", min_value=3, max_value=40, step=1, key="years_custom")
-    with c2:
-        st.number_input("第 4 年起每年投入（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="post3_annual")
-    st.write("")  # 空行
-    cc1, cc2, cc3 = st.columns(3)
-    with cc1:
-        st.number_input("第 1 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y1_prem")
-        st.number_input("第 1 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y1_cv")
-    with cc2:
-        st.number_input("第 2 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y2_prem")
-        st.number_input("第 2 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y2_cv")
-    with cc3:
-        st.number_input("第 3 年保費（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="y3_prem")
-        st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
-    st.info("前三年採上方自訂數值；第 4 年起套用本欄位金額與預設年末現金價值比率。")
+st.subheader("前三年：保費需一致；保價金可覆寫")
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.number_input("第 1 年保費（元）", min_value=0, max_value=MAX_ANNUAL,
+                    step=100_000, format="%d", key="y1_prem", on_change=_sync_from_y1)
+    st.number_input("第 1 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y1_cv")
+with c2:
+    st.number_input("第 2 年保費（元）", value=st.session_state.y2_prem,
+                    min_value=0, max_value=MAX_ANNUAL, step=0, format="%d", key="y2_prem_display", disabled=True)
+    st.caption("＊第 2 年保費自動等於第 1 年保費")
+    st.number_input("第 2 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y2_cv")
+with c3:
+    st.number_input("第 3 年保費（元）", value=st.session_state.y3_prem,
+                    min_value=0, max_value=MAX_ANNUAL, step=0, format="%d", key="y3_prem_display", disabled=True)
+    st.caption("＊第 3 年保費自動等於第 1 年保費")
+    st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
 
-# 讀取輸入（依模式）
-change_year = int(st.session_state.change_input)
-if not st.session_state.custom_first3_enabled:
-    years = int(st.session_state.years_input)
-    annual_for_post3 = int(st.session_state.annual_input)
-else:
-    years = int(st.session_state.years_custom)
-    annual_for_post3 = int(st.session_state.post3_annual)
+# 把 display 的鎖定值寫回實際欄位（避免後續計算取到舊值）
+st.session_state.y2_prem = st.session_state.y1_prem
+st.session_state.y3_prem = st.session_state.y1_prem
 
-# ---------------- 基本校驗與自動校正 ----------------
-if annual_for_post3 > MAX_ANNUAL:
+# ---------------- 基本校驗 ----------------
+years = int(st.session_state.years_total)
+change_year = int(st.session_state.change_year)
+post3_annual = int(st.session_state.post3_annual)
+if post3_annual > MAX_ANNUAL:
     st.error("每年投入金額不可超過 1 億元。"); st.stop()
 if change_year > years:
     st.warning("變更年份不可晚於年期，已自動校正為年期。")
     change_year = years
-    st.session_state.change_input = years  # 回寫界面
+    st.session_state.change_year = years
 
-# ---------------- 生成年度序列（套用自訂前三年 / 其後用 post3_annual 或 annual_input） ----------------
-def build_schedule(years_total: int, annual_default_after3: int):
+# ---------------- 生成年度序列 ----------------
+def build_schedule(years_total: int, post3: int):
     rows = []
     cum = 0
     for y in range(1, years_total+1):
-        # 年度保費
-        if st.session_state.custom_first3_enabled and y <= 3:
-            premium = int([st.session_state.y1_prem, st.session_state.y2_prem, st.session_state.y3_prem][y-1])
+        # 保費
+        if y == 1:
+            premium = int(st.session_state.y1_prem)
+        elif y == 2:
+            premium = int(st.session_state.y2_prem)
+        elif y == 3:
+            premium = int(st.session_state.y3_prem)
         else:
-            premium = annual_default_after3
+            premium = post3
         cum += premium
 
         # 年末現金價值
-        if st.session_state.custom_first3_enabled and y <= 3:
-            cv = int([st.session_state.y1_cv, st.session_state.y2_cv, st.session_state.y3_cv][y-1])
+        if y == 1:
+            cv = int(st.session_state.y1_cv)
+        elif y == 2:
+            cv = int(st.session_state.y2_cv)
+        elif y == 3:
+            cv = int(st.session_state.y3_cv)
         else:
             ratio = RATIO_MAP.get(y, 0.95)
             cv = int(round(cum * ratio))
@@ -204,25 +187,32 @@ def build_schedule(years_total: int, annual_default_after3: int):
         rows.append({"年度": y, "每年投入（元）": premium, "累計投入（元）": cum, "年末現金價值（元）": cv})
     return pd.DataFrame(rows)
 
-df_years = build_schedule(years, annual_for_post3)
+df_years = build_schedule(years, post3_annual)
 
 # ---------------- 稅務與金額（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
-
-# 名目累積移轉（兩種方式一致）＝ 第 1～N 年實際「每年投入」總和
 nominal_transfer_to_N = int(df_years.loc[df_years["年度"] <= change_year, "每年投入（元）"].sum())
 
-# 保單規劃（第 N 年變更）以「當年現金價值」認列
 gift_with_policy = cv_at_change
 net_with_policy  = max(0, gift_with_policy - EXEMPTION)
-tax_with_policy, rate_with = gift_tax(net_with_policy)
+def tax_and_rate(net:int):
+    if net <= 0: return 0, "—"
+    if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
+    if net <= BR15_NET_MAX:
+        base = BR10_NET_MAX * RATE_10
+        extra = (net - BR10_NET_MAX) * RATE_15
+        return int(round(base + extra)), "15%"
+    base = BR10_NET_MAX * RATE_10 + (BR15_NET_MAX - BR10_NET_MAX) * RATE_15
+    extra = (net - BR15_NET_MAX) * RATE_20
+    return int(round(base + extra)), "20%"
 
-# 現金贈與（第 1～N 年逐年課稅）以「當年實際投入」為準
+tax_with_policy, rate_with = tax_and_rate(net_with_policy)
+
 total_tax_no_policy, yearly_tax_list = 0, []
 for _, r in df_years[df_years["年度"] <= change_year].iterrows():
     annual_i = int(r["每年投入（元）"])
     net = max(0, annual_i - EXEMPTION)
-    t, rate = gift_tax(net)
+    t, rate = tax_and_rate(net)
     total_tax_no_policy += t
     yearly_tax_list.append({
         "年度": int(r["年度"]),
@@ -234,42 +224,25 @@ for _, r in df_years[df_years["年度"] <= change_year].iterrows():
 
 tax_saving = total_tax_no_policy - tax_with_policy
 
-# ---------------- 兩行扼要說明 ----------------
-st.markdown(
-    f"""
-<div class="section small">
-<span class="tag">保單規劃</span>
-於第 <b>{change_year}</b> 年完成要保人變更，當年度以 <b>保單價值準備金</b> 認列贈與（可自訂前 3 年現金價值；其後依比率推估）。<br>
-<span class="tag">現金贈與</span>
-需於第 <b>1～{change_year}</b> 年逐年以 <b>當年實際投入金額</b> 完成移轉，各年分別課稅。
-</div>
-""",
-    unsafe_allow_html=True
-)
+# ---------------- 指標卡 ----------------
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
-
-# ---------------- 指標小卡 ----------------
 colA, colB, colC = st.columns(3)
-
 with colA:
     st.markdown(f"**保單規劃（第 {change_year} 年變更）**")
     card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 實際投入總和")
     card("變更當年視為贈與（保單價值準備金）", fmt_y(gift_with_policy))
     card("當年度應納贈與稅", fmt_y(tax_with_policy), note=f"稅率 {rate_with}")
-
 with colB:
     st.markdown(f"**現金贈與（第 1～{change_year} 年）**")
     card(f"累積移轉（名目）至第 {change_year} 年", fmt_y(nominal_transfer_to_N), note="= 實際投入總和")
     card(f"累計贈與稅（至第 {change_year} 年）", fmt_y(total_tax_no_policy))
-
 with colC:
     st.markdown("**稅負差異**")
     card(f"至第 {change_year} 年節省之贈與稅", fmt_y(tax_saving))
 
-# ---------------- 明細（預設收合；索引隱藏） ----------------
-st.write("")  # 空行
+# ---------------- 明細（收合） ----------------
 with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False):
-    st.markdown("**年度現金價值（自訂前三年／其後依比率推估）**")
+    st.markdown("**年度現金價值（前三年可覆寫；其後依比率推估）**")
     st.dataframe(
         df_years.assign(
             **{
@@ -281,47 +254,40 @@ with st.expander("年度明細與逐年稅額（專家檢視）", expanded=False
         use_container_width=True,
         hide_index=True,
     )
-
     st.markdown("**現金贈與：逐年稅額（第 1～變更年）**")
     df_no = pd.DataFrame(sorted(yearly_tax_list, key=lambda x: x["年度"]))
     show_no = df_no.copy()
     for c in ["現金贈與（元）", "免稅後淨額（元）", "應納贈與稅（元）"]:
         show_no[c] = show_no[c].map(fmt_y)
-    st.dataframe(
-        show_no,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-st.markdown('<hr class="custom">', unsafe_allow_html=True)
+    st.dataframe(show_no, use_container_width=True, hide_index=True)
 
 # ---------------- 規劃效果 ----------------
 st.subheader("規劃效果")
 st.markdown(
     f"""
 **① 現金流不變，家族保障更具規模**  
-- 現金贈與：每投入 **1 元**僅能**等值移轉 1 元**，缺乏保障槓桿，且給付時點與資金到位**不具確定性**。  
-- 保單規劃：每投入 **1 元**可在約定事件或時點**轉化為超過 1 元的保額**（依商品試算與核保而定），形成**保障槓桿**；並可**指定受益人**，達到**定向傳承**。  
+- 現金贈與：每投入 **1 元**僅能**等值移轉 1 元**。  
+- 保單規劃：每投入 **1 元**可在約定事件或時點**轉化為超過 1 元的保額**（依商品試算與核保而定），並可**指定受益人**達到**定向傳承**。  
 
 **② 資金到位的確定性**  
-- 保險給付不受市場波動與資產流動性影響，可避免於壓力時點折價出售股權或不動產，形同建立**流動性防火牆**。  
+- 保險給付不受市場波動與資產流動性影響，避免壓力時點折價處分資產籌資。  
 
 **③ 治理與控管**  
-- 以您設定的交棒節點（第 {change_year} 年）變更要保人，受益人與比例得事前規劃；可搭配保險信託以分期撥付、抑制外界干擾。  
-- 透過**保單贈與（含變更要保人）**可維持**帳戶獨立**並降低與銀行往來帳戶的混同風險；亦有助於**婚姻財富治理**，明確標示用途（如教育金、長照金）。  
+- 交棒（第 {change_year} 年）前由一代控管；交棒後改由二代控管；可搭配信託與保全條款。  
 
 **④ 稅務效率**  
-- 保單規劃：僅於第 {change_year} 年就「**保單價值準備金**」計贈與稅（可自訂前三年實際現價），稅負效率通常更佳。  
-- 現金贈與：需於第 1～{change_year} 年逐年就**實際當年投入**課稅；上方指標已呈現兩者差異。
+- 保單規劃：僅於第 {change_year} 年就「**保單價值準備金**」計贈與稅（通常低於累計投入）。  
+- 現金贈與：第 1～{change_year} 年逐年就**實際當年投入**課稅；上方指標已呈現差異。
 """
 )
 
-# ---------------- 重要提醒（頁面最下方） ----------------
+# ---------------- 重要提醒 ----------------
 st.markdown(
     """
 <div class="footer-note">
-<b>重要提醒：</b>本頁內容僅為示範與教育性說明參考，實際權利義務以<strong>保單條款</strong>、保險公司<strong>核保／保全規定</strong>、
-以及您與專業顧問完成之<strong>個別化規劃文件</strong>為準。稅制數值採目前假設，若法規調整，請以最新公告為準。
+<b>重要提醒：</b>本頁內容僅為示範與教育性說明參考，實際權利義務以<strong>保單條款</strong>、
+保險公司<strong>核保／保全規定</strong>與<strong>個別化規劃文件</strong>為準。稅制數值採目前假設，
+若法規調整，請以最新公告為準。
 </div>
 """,
     unsafe_allow_html=True
