@@ -8,30 +8,26 @@ import streamlit as st
 st.set_page_config(page_title="保單規劃｜用同樣現金流，更聰明完成贈與", layout="wide")
 
 # ---------------- 稅制常數（114年/2025） ----------------
-EXEMPTION    = 2_440_000   # 年免稅額（單一贈與人）
-BR10_NET_MAX = 28_110_000  # 10% 淨額上限
-BR15_NET_MAX = 56_210_000  # 15% 淨額上限
+EXEMPTION    = 2_440,000   # 年免稅額（單一贈與人）
+BR10_NET_MAX = 28_110,000  # 10% 淨額上限
+BR15_NET_MAX = 56_210,000  # 15% 淨額上限
 RATE_10, RATE_15, RATE_20 = 0.10, 0.15, 0.20
-
 MAX_ANNUAL   = 100_000_000  # 每年現金投入上限：1 億
 
 # ---------------- 初始化 Session State ----------------
 DEFAULTS = {
-    "years_total": 8,         # 總年期
-    "change_year": 1,         # 第幾年變更要保人（交棒）
+    "years_total": 8,      # 總年期
+    "change_year": 1,      # 第幾年變更要保人（交棒）
 
     # 前三年保費（必須一致；以 y1_prem 為主）
-    "y1_prem": 10_000_000,    # 預設 1,000 萬
+    "y1_prem": 10_000_000, # 預設 1,000 萬
     "y2_prem": 10_000_000,
     "y3_prem": 10_000_000,
 
     # 前三年年末現金價值（可覆寫；預設依 50%/70%/80% of 累計保費）
-    "y1_cv":   5_000_000,     # = 10,000,000 * 0.50
-    "y2_cv":  14_000_000,     # = 20,000,000 * 0.70
-    "y3_cv":  24_000_000,     # = 30,000,000 * 0.80
-
-    # 第四年起的每年投入（預設 = 第 1 年保費）
-    "post3_annual": 10_000_000,
+    "y1_cv":   5_000_000,  # = 10,000,000 * 0.50
+    "y2_cv":  14_000_000,  # = 20,000,000 * 0.70
+    "y3_cv":  24_000_000,  # = 30,000,000 * 0.80
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -44,24 +40,16 @@ RATIO_MAP = {1:0.50, 2:0.70, 3:0.80, 4:0.85, 5:0.88, 6:0.91, 7:0.93, 8:0.95}
 st.markdown(
     """
 <style>
-:root {
-  --ink:#0f172a; --sub:#475569; --line:#E6E8EF; --bg:#FAFBFD;
-  --gold:#C8A96A; --emerald:#059669;
-}
+:root { --ink:#0f172a; --sub:#475569; --line:#E6E8EF; --bg:#FAFBFD; --gold:#C8A96A; --emerald:#059669; }
 .block-container { max-width:1320px; padding-top:1rem; padding-bottom:2rem; }
 hr.custom{ border:none; border-top:1px solid var(--line); margin:12px 0 6px; }
 .small{ color:var(--sub); font-size:.95rem; line-height:1.6; }
-.kpi{ border:1px solid var(--line); border-left:5px solid var(--gold);
-  border-radius:12px; padding:14px 16px; background:#fff;
-  box-shadow:0 1px 2px rgba(10,22,70,.04);}
+.kpi{ border:1px solid var(--line); border-left:5px solid var(--gold); border-radius:12px; padding:14px 16px; background:#fff; box-shadow:0 1px 2px rgba(10,22,70,.04);}
 .kpi .label{ color:var(--sub); font-size:.95rem; margin-bottom:6px;}
 .kpi .value{ font-weight:700; font-variant-numeric:tabular-nums; font-size:1.05rem; }
 .kpi .note{ color:var(--emerald); font-size:.9rem; margin-top:4px; }
 .section{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; }
-.footer-note{
-  margin-top:18px; padding:14px 16px; border:1px dashed var(--line);
-  background:#fff; border-radius:12px; color:#334155; font-size:.92rem;
-}
+.footer-note{ margin-top:18px; padding:14px 16px; border:1px dashed var(--line); background:#fff; border-radius:12px; color:#334155; font-size:.92rem; }
 </style>
 """,
     unsafe_allow_html=True
@@ -77,7 +65,6 @@ def fmt(n: float) -> str: return f"{n:,.0f}"
 def fmt_y(n: float) -> str: return f"{fmt(n)} 元"
 
 def gift_tax(net: int):
-    """依累進稅率計算單年贈與稅（含基稅）。回傳 (稅額, 稅率字串)"""
     if net <= 0: return 0, "—"
     if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
     if net <= BR15_NET_MAX:
@@ -93,12 +80,9 @@ def _sync_from_y1():
     p = int(st.session_state.y1_prem)
     st.session_state.y2_prem = p
     st.session_state.y3_prem = p
-    # 依累計保費 × 比率（50%/70%/80%）
     st.session_state.y1_cv = int(round(p * RATIO_MAP[1]))
     st.session_state.y2_cv = int(round(p * 2 * RATIO_MAP[2]))
     st.session_state.y3_cv = int(round(p * 3 * RATIO_MAP[3]))
-    # 第四年起預設也跟著走（可再手動調整）
-    st.session_state.post3_annual = p
 
 # ---------------- 標題與摘要 ----------------
 st.title("保單規劃｜用同樣現金流，更聰明完成贈與")
@@ -115,13 +99,11 @@ with st.expander("規劃摘要", expanded=True):
     )
 
 # ---------------- 參數輸入 ----------------
-top1, top2, top3 = st.columns(3)
+top1, top2 = st.columns(2)
 with top1:
     st.number_input("總年期（年）", min_value=3, max_value=40, step=1, key="years_total")
 with top2:
     st.number_input("第幾年變更要保人（交棒）", min_value=1, max_value=40, step=1, key="change_year")
-with top3:
-    st.number_input("第 4 年起每年投入（元）", min_value=0, max_value=MAX_ANNUAL, step=100_000, format="%d", key="post3_annual")
 
 st.markdown('<hr class="custom">', unsafe_allow_html=True)
 
@@ -142,35 +124,28 @@ with c3:
     st.caption("＊第 3 年保費自動等於第 1 年保費")
     st.number_input("第 3 年年末現金價值（元）", min_value=0, step=100_000, format="%d", key="y3_cv")
 
-# 把 display 的鎖定值寫回實際欄位（避免後續計算取到舊值）
+# 寫回鎖定的保費值
 st.session_state.y2_prem = st.session_state.y1_prem
 st.session_state.y3_prem = st.session_state.y1_prem
 
 # ---------------- 基本校驗 ----------------
 years = int(st.session_state.years_total)
 change_year = int(st.session_state.change_year)
-post3_annual = int(st.session_state.post3_annual)
-if post3_annual > MAX_ANNUAL:
-    st.error("每年投入金額不可超過 1 億元。"); st.stop()
 if change_year > years:
     st.warning("變更年份不可晚於年期，已自動校正為年期。")
     change_year = years
     st.session_state.change_year = years
 
-# ---------------- 生成年度序列 ----------------
-def build_schedule(years_total: int, post3: int):
-    rows = []
-    cum = 0
+# ---------------- 生成年度序列（第4年起保費=第1年保費） ----------------
+def build_schedule(years_total: int):
+    rows, cum = [], 0
+    p1 = int(st.session_state.y1_prem)
     for y in range(1, years_total+1):
         # 保費
-        if y == 1:
-            premium = int(st.session_state.y1_prem)
-        elif y == 2:
-            premium = int(st.session_state.y2_prem)
-        elif y == 3:
-            premium = int(st.session_state.y3_prem)
-        else:
-            premium = post3
+        if y == 1: premium = p1
+        elif y == 2: premium = p1
+        elif y == 3: premium = p1
+        else: premium = p1  # 第 4 年起沿用第 1 年保費
         cum += premium
 
         # 年末現金價值
@@ -187,7 +162,7 @@ def build_schedule(years_total: int, post3: int):
         rows.append({"年度": y, "每年投入（元）": premium, "累計投入（元）": cum, "年末現金價值（元）": cv})
     return pd.DataFrame(rows)
 
-df_years = build_schedule(years, post3_annual)
+df_years = build_schedule(years)
 
 # ---------------- 稅務與金額（算到第 change_year 年） ----------------
 cv_at_change = int(df_years.loc[df_years["年度"] == change_year, "年末現金價值（元）"].iloc[0])
@@ -195,6 +170,7 @@ nominal_transfer_to_N = int(df_years.loc[df_years["年度"] <= change_year, "每
 
 gift_with_policy = cv_at_change
 net_with_policy  = max(0, gift_with_policy - EXEMPTION)
+
 def tax_and_rate(net:int):
     if net <= 0: return 0, "—"
     if net <= BR10_NET_MAX: return int(round(net * RATE_10)), "10%"
